@@ -69,7 +69,7 @@ export const createMonth = async (
       await addDoc(collection(db, "months", monthRef.id, "accounts"), {
         name: data.name,
         type: data.type,
-        value: 0,
+        value: Number(data.value || 0),
         isPaid: false,
       });
     }
