@@ -14,7 +14,7 @@ import AccountColumn from "../../components/AccountColumn";
 import LaunchModal from "../../components/LaunchModal";
 import CreateAccountModal from "../../components/CreateAccountModal";
 import { useFinance } from "../../hooks/useFinance";
-import { ALLOWED_USERS } from "../../Config/allowedUsers";
+import { ALLOWED_USERS } from "../../config/allowedUsers";
 
 function EyeIcon() {
   return (
