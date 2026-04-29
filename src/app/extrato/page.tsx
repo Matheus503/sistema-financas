@@ -55,6 +55,11 @@ type TransactionGroup = {
   items: ExtratoItem[];
 };
 
+const monthNames = [
+  "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
+];
+
 type LauncherFilter = "Matheus" | "Giovana" | "all";
 
 function ExtratoContent() {
@@ -66,8 +71,7 @@ function ExtratoContent() {
   const [showValues, setShowValues] = useState(true);
 
   const [currentUserId, setCurrentUserId] = useState("");
-  const [currentLauncherName, setCurrentLauncherName] =
-    useState<LauncherFilter | "">("");
+  const [currentLauncherName, setCurrentLauncherName] = useState<LauncherFilter | "">("");
 
   const [allItems, setAllItems] = useState<ExtratoItem[]>([]);
   const [groups, setGroups] = useState<TransactionGroup[]>([]);
@@ -76,8 +80,7 @@ function ExtratoContent() {
 
   const [filterDate, setFilterDate] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
-  const [filterLauncher, setFilterLauncher] =
-    useState<LauncherFilter>("all");
+  const [filterLauncher, setFilterLauncher] = useState<LauncherFilter>("all");
 
   const [showEdit, setShowEdit] = useState(false);
   const [editItem, setEditItem] = useState<ExtratoItem | null>(null);
@@ -85,19 +88,18 @@ function ExtratoContent() {
   const [saving, setSaving] = useState(false);
 
   const [showDelete, setShowDelete] = useState(false);
-  const [itemToDelete, setItemToDelete] =
-    useState<ExtratoItem | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<ExtratoItem | null>(null);
 
   const formatMoney = (v: number) =>
-    v.toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
+    v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   const parseCurrency = (value: string) => {
     if (!value) return 0;
     return Number(value.replace(/\./g, "").replace(",", "."));
   };
+
+  const formatMonthLabel = (month: number, year: number) =>
+    `Fatura ${String(month).padStart(2, "0")}/${year}`;
 
   const normalizeLauncherName = (value: string) => {
     const lower = String(value || "").toLowerCase();
@@ -111,19 +113,38 @@ function ExtratoContent() {
     return normalizeLauncherName(raw) as LauncherFilter | "";
   };
 
+  const getItemLauncher = (item: ExtratoItem) => {
+    if (item.launcherName) {
+      const normalized = normalizeLauncherName(item.launcherName);
+      if (normalized) return normalized;
+    }
+
+    if (!currentUserId || !item.userId || !currentLauncherName) return "";
+
+    if (item.userId === currentUserId) return currentLauncherName;
+
+    if (currentLauncherName === "Matheus") return "Giovana";
+    if (currentLauncherName === "Giovana") return "Matheus";
+
+    return "";
+  };
+
   const normalizeDateKey = (value: string) => {
     if (!value) return "";
-    const date = new Date(value);
+    const trimmed = String(value).trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    if (trimmed.includes("T")) return trimmed.slice(0, 10);
+
+    const date = new Date(trimmed);
     if (Number.isNaN(date.getTime())) return "";
-    return date.toISOString().slice(0, 10);
+
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   };
 
   const loadExtrato = useCallback(async () => {
     const user = auth.currentUser;
-    if (!user) {
-      router.push("/");
-      return;
-    }
+    if (!user) return router.push("/");
 
     setLoading(true);
 
@@ -142,12 +163,11 @@ function ExtratoContent() {
       ]);
 
       const nubankIds = new Set(
-        accounts
-          .filter((a: any) =>
-            String(a.name || "").includes("Nubank")
-          )
-          .map((a: any) => a.id)
+        accounts.filter((a: any) => String(a.name).includes("Nubank")).map((a: any) => a.id)
       );
+
+      const label = formatMonthLabel(targetMonth.month, targetMonth.year);
+      const monthOrder = targetMonth.year * 100 + targetMonth.month;
 
       const items = transactions
         .filter((t: any) => nubankIds.has(t.accountId))
@@ -157,10 +177,16 @@ function ExtratoContent() {
           monthId: targetMonth.id,
           date: t.date,
           value: t.value,
-          monthLabel: "",
-          monthOrder: 0,
+          monthLabel: label,
+          monthOrder,
+          note: t.note,
+          category: t.category,
+          userId: t.userId,
+          userName: t.userName,
+          launcherName: t.launcherName,
         }));
 
+      setMonthTitle(label);
       setAllItems(items);
     } finally {
       setLoading(false);
@@ -169,15 +195,12 @@ function ExtratoContent() {
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
-      if (!user) {
-        router.push("/");
-        return;
-      }
+      if (!user) return router.push("/");
 
       if (!user.email || !ALLOWED_USERS.includes(user.email)) {
+        alert("Acesso não autorizado");
         await auth.signOut();
-        router.push("/");
-        return;
+        return router.push("/");
       }
 
       setCurrentUserId(user.uid);
@@ -191,7 +214,66 @@ function ExtratoContent() {
     return () => unsub();
   }, [loadExtrato, router]);
 
-  return <div>Extrato funcionando 🚀</div>;
+  const filteredItems = useMemo(() => {
+    return allItems.filter((item) => {
+      if (filterDate && normalizeDateKey(item.date) !== filterDate) return false;
+      if (filterCategory && item.category !== filterCategory) return false;
+      if (filterLauncher !== "all" && getItemLauncher(item) !== filterLauncher) return false;
+      return true;
+    });
+  }, [allItems, filterDate, filterCategory, filterLauncher]);
+
+  useEffect(() => {
+    setGroups([{ monthLabel: monthTitle, items: filteredItems }]);
+    setTotal(filteredItems.reduce((sum, i) => sum + i.value, 0));
+  }, [filteredItems, monthTitle]);
+
+  const categories = useMemo(() => {
+    return [...new Set(allItems.map((i) => i.category).filter(Boolean))] as string[];
+  }, [allItems]);
+
+  const openEdit = (item: ExtratoItem) => {
+    setEditItem(item);
+    setEditValue(String(item.value));
+    setShowEdit(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editItem) return;
+    const value = parseCurrency(editValue);
+
+    await updateTransaction(editItem.monthId, editItem.transactionId, { value });
+    await loadExtrato();
+
+    setShowEdit(false);
+  };
+
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
+    await deleteTransaction(itemToDelete.monthId, itemToDelete.transactionId);
+    await loadExtrato();
+    setShowDelete(false);
+  };
+
+  return (
+    <div className="p-6 text-white">
+      <h1 className="text-2xl font-bold mb-4">{monthTitle}</h1>
+
+      <p className="mb-4">Total: {formatMoney(total)}</p>
+
+      {loading ? (
+        <p>Carregando...</p>
+      ) : (
+        <TransactionList
+          groups={groups}
+          showValues={showValues}
+          formatMoney={formatMoney}
+          onEdit={openEdit}
+          onDelete={(i) => setItemToDelete(i)}
+        />
+      )}
+    </div>
+  );
 }
 
 export default function ExtratoPage() {
