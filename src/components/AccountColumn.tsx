@@ -11,6 +11,7 @@ type Props = {
   onToggle: (acc: any) => void;
   onEdit: (acc: any) => void;
   onAdd: (type: string) => void;
+  onOpenStatement?: () => void;
 };
 
 export default function AccountColumn({
@@ -24,6 +25,7 @@ export default function AccountColumn({
   onToggle,
   onEdit,
   onAdd,
+  onOpenStatement,
 }: Props) {
   return (
     <div className="bg-zinc-900/70 p-4 rounded-2xl border border-zinc-800">
@@ -69,7 +71,9 @@ export default function AccountColumn({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <span
-                    onClick={() => onEdit(acc)}
+                    onClick={() =>
+                      isNubank ? onOpenStatement?.() : onEdit(acc)
+                    }
                     className="cursor-pointer hover:underline"
                   >
                     {formatMoney(getAccountValue(acc))}

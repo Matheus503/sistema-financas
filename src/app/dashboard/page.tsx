@@ -414,6 +414,7 @@ export default function DashboardPage() {
           onToggle={(acc) => handleTogglePaid(monthId!, acc)}
           onEdit={openEdit}
           onAdd={(type) => setCreateModal({ open: true, type })}
+          onOpenStatement={() => router.push(extratoHref)}
         />
       </div>
 
@@ -493,6 +494,10 @@ export default function DashboardPage() {
         accounts={accounts}
         setAccounts={setAccounts}
         setTransactions={setTransactions}
+        onMonthsChanged={async () => {
+          const refreshed = await getAllMonths();
+          setMonths(refreshed);
+        }}
       />
 
       {/* MODAL CRIAR CONTA */}

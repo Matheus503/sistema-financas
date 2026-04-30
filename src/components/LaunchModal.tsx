@@ -3,15 +3,40 @@
 import { useEffect, useMemo, useState } from "react";
 import { auth } from "../lib/auth";
 import { addTransaction, getTransactions } from "../services/transactionService";
-import { updateAccountValue } from "../services/accountService"
+import {
+  getAccountsByMonth,
+  updateAccountValue,
+} from "../services/accountService";
+import { createMonth, getAllMonths } from "../services/monthService";
+
+type FinanceAccount = {
+  id: string;
+  name?: string;
+  type?: string;
+  value?: number;
+};
+
+type MonthDoc = {
+  id: string;
+  year: number;
+  month: number;
+};
+
+type TransactionRecord = {
+  id: string;
+  accountId?: string;
+  value?: number;
+  date?: string;
+};
 
 type Props = {
   open: boolean;
   onClose: () => void;
   monthId: string | null;
-  accounts: any[];
-  setAccounts: React.Dispatch<React.SetStateAction<any[]>>;
-  setTransactions: React.Dispatch<React.SetStateAction<any[]>>;
+  accounts: FinanceAccount[];
+  setAccounts: React.Dispatch<React.SetStateAction<FinanceAccount[]>>;
+  setTransactions: React.Dispatch<React.SetStateAction<TransactionRecord[]>>;
+  onMonthsChanged?: () => Promise<void>;
 };
 
 const nubankCategories = [
@@ -40,6 +65,28 @@ const resolveLauncherName = () => {
     "";
 };
 
+const getTodayDateKey = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const getInvoiceMonth = (dateKey: string) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  if (day >= 12) {
+    return {
+      year: month === 12 ? year + 1 : year,
+      month: month === 12 ? 1 : month + 1,
+    };
+  }
+
+  return { year, month };
+};
+
 export default function LaunchModal({
   open,
   onClose,
@@ -47,6 +94,7 @@ export default function LaunchModal({
   accounts,
   setAccounts,
   setTransactions,
+  onMonthsChanged,
 }: Props) {
   const [value, setValue] = useState("");
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -102,20 +150,61 @@ export default function LaunchModal({
     if (!selected) return;
 
     const launcherName = resolveLauncherName();
+    const launchDate = date || getTodayDateKey();
+    let targetMonthId = monthId;
+    let targetAccount = selected;
+    let shouldRefreshMonths = false;
+
+    if (isNubankSelected) {
+      const invoiceMonth = getInvoiceMonth(launchDate);
+      const months = (await getAllMonths()) as MonthDoc[];
+      const existingMonth = months.find(
+        (month) =>
+          month.year === invoiceMonth.year && month.month === invoiceMonth.month
+      );
+
+      if (existingMonth) {
+        targetMonthId = existingMonth.id;
+      } else {
+        targetMonthId = await createMonth(
+          invoiceMonth.year,
+          invoiceMonth.month,
+          auth.currentUser.uid
+        );
+        shouldRefreshMonths = true;
+      }
+
+      if (targetMonthId !== monthId) {
+        const targetAccounts = (await getAccountsByMonth(
+          targetMonthId
+        )) as FinanceAccount[];
+        const targetNubank = targetAccounts.find((acc) =>
+          acc.name?.includes("Nubank")
+        );
+
+        if (!targetNubank) return;
+
+        targetAccount = targetNubank;
+      }
+    }
 
     const payload = {
       value: parsedValue,
-      accountId: selected.id,
+      accountId: targetAccount.id,
       category: isNubankSelected ? category : "",
       note,
       userId: auth.currentUser.uid,
       userName: auth.currentUser.displayName || auth.currentUser.email || "",
       launcherId: auth.currentUser.uid,
       launcherName,
-      date: date || new Date().toISOString(),
+      date: launchDate,
     };
 
-    await addTransaction(monthId, payload);
+    await addTransaction(targetMonthId, payload);
+
+    if (shouldRefreshMonths) {
+      await onMonthsChanged?.();
+    }
 
     if (!selected.name?.includes("Nubank")) {
       const newValue = Number(selected.value || 0) + parsedValue;
@@ -129,7 +218,7 @@ export default function LaunchModal({
       );
     }
 
-    const trans = await getTransactions(monthId);
+    const trans = (await getTransactions(monthId)) as TransactionRecord[];
     setTransactions(trans);
 
     setValue("");
