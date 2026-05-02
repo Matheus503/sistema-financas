@@ -370,13 +370,25 @@ function ExtratoContent() {
           </p>
         </div>
 
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl"
-          type="button"
-        >
-          Voltar
-        </button>
+<div className="flex gap-2">
+  <button
+    onClick={() =>
+      router.push(`/extrato-total?monthId=${requestedMonthId}`)
+    }
+    className="bg-purple-700 hover:bg-purple-600 px-4 py-2 rounded-xl"
+    type="button"
+  >
+    Extrato completo
+  </button>
+
+  <button
+    onClick={() => router.push("/dashboard")}
+    className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl"
+    type="button"
+  >
+    Voltar
+  </button>
+</div>
       </div>
 
       <div className="bg-purple-800 p-6 rounded-2xl mb-6 flex justify-between items-center">

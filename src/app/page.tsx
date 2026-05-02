@@ -7,15 +7,27 @@ import { loginWithGoogle, auth } from "../lib/auth";
 export default function LoginPage() {
   const router = useRouter();
 
-  useEffect(() => {
-    const unsub = auth.onAuthStateChanged((user) => {
-      if (user) {
-        router.push("/dashboard");
-      }
-    });
+useEffect(() => {
+  const unsub = auth.onAuthStateChanged((user) => {
+    if (!user) return;
 
-    return () => unsub();
-  }, []);
+    const currentPath = window.location.pathname;
+
+    // 🔥 Se já está no mobile, NÃO redireciona
+    if (currentPath.startsWith("/mobile")) return;
+
+    // 🔥 Detecta mobile
+    const isMobile = window.innerWidth < 768;
+
+    if (isMobile) {
+      router.push("/mobile");
+    } else {
+      router.push("/dashboard");
+    }
+  });
+
+  return () => unsub();
+}, [router]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 flex items-center justify-center text-white">
