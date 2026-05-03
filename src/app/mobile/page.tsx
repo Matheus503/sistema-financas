@@ -35,6 +35,13 @@ export default function MobileDashboard() {
 
   const formatDate = (date: string) => {
     if (!date) return "";
+    const dateKey = String(date).slice(0, 10);
+    const match = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+    if (match) {
+      return `${match[3]}/${match[2]}`;
+    }
+
     const d = new Date(date);
     return d.toLocaleDateString("pt-BR", {
       day: "2-digit",
@@ -228,9 +235,18 @@ export default function MobileDashboard() {
         accounts={accounts}
         setAccounts={setAccounts}
         setTransactions={setTransactions}
-        onMonthsChanged={async () => {
+        onMonthsChanged={async (targetMonthId) => {
           const refreshed = await getAllMonths();
           setMonths(refreshed);
+
+          const targetIndex = refreshed.findIndex(
+            (month: any) => month.id === targetMonthId
+          );
+
+          if (targetIndex >= 0) {
+            setCurrentIndex(targetIndex);
+            setMonthId(targetMonthId);
+          }
         }}
       />
 

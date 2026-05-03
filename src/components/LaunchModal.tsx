@@ -36,7 +36,7 @@ type Props = {
   accounts: FinanceAccount[];
   setAccounts: React.Dispatch<React.SetStateAction<FinanceAccount[]>>;
   setTransactions: React.Dispatch<React.SetStateAction<TransactionRecord[]>>;
-  onMonthsChanged?: () => Promise<void>;
+  onMonthsChanged?: (targetMonthId: string) => Promise<void>;
 };
 
 const nubankCategories = [
@@ -202,8 +202,8 @@ export default function LaunchModal({
 
     await addTransaction(targetMonthId, payload);
 
-    if (shouldRefreshMonths) {
-      await onMonthsChanged?.();
+    if (shouldRefreshMonths || targetMonthId !== monthId) {
+      await onMonthsChanged?.(targetMonthId);
     }
 
     if (!selected.name?.includes("Nubank")) {
