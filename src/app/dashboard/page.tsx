@@ -63,7 +63,7 @@ function EyeOffIcon() {
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
-  const [showValues, setShowValues] = useState(true);
+  const [showValues, setShowValues] = useState(false);
 
   const [months, setMonths] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -146,7 +146,7 @@ export default function DashboardPage() {
     setEditAccount(null);
     setEditValue("");
     setShowUserMenu(false);
-    setShowValues(true);
+    setShowValues(false);
   };
 
   useEffect(() => {
