@@ -207,20 +207,19 @@ export default function ExtratoTotalPage() {
     ][m - 1];
 
   return (
-    <div className="min-h-screen bg-black text-white px-6 py-6">
+    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-6 py-6">
 
-      {/* HEADER COMPACTO */}
+      {/* HEADER */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-
         <div className="flex items-center gap-4 flex-wrap">
-          <h1 className="text-xl font-bold whitespace-nowrap">
+          <h1 className="text-2xl font-bold whitespace-nowrap">
             Extrato Total
           </h1>
 
           <select
             value={selectedYear ?? ""}
             onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="bg-zinc-800 px-3 py-1.5 rounded"
+            className="bg-zinc-800 px-4 py-2 rounded-lg outline-none border border-zinc-700"
           >
             {years.map((y) => (
               <option key={y}>{y}</option>
@@ -234,7 +233,7 @@ export default function ExtratoTotalPage() {
                 e.target.value ? Number(e.target.value) : null
               )
             }
-            className="bg-zinc-800 px-3 py-1.5 rounded"
+            className="bg-zinc-800 px-4 py-2 rounded-lg outline-none border border-zinc-700"
           >
             <option value="">Todos</option>
             {monthsOfYear.map((m) => (
@@ -249,7 +248,7 @@ export default function ExtratoTotalPage() {
             onChange={(e) =>
               setLauncherFilter(e.target.value as LauncherFilter)
             }
-            className="bg-zinc-800 px-3 py-1.5 rounded"
+            className="bg-zinc-800 px-4 py-2 rounded-lg outline-none border border-zinc-700"
           >
             <option value="all">Todos</option>
             <option value="Matheus">Matheus</option>
@@ -259,26 +258,27 @@ export default function ExtratoTotalPage() {
 
         <button
           onClick={() => router.push("/dashboard")}
-          className="bg-zinc-800 px-4 py-1.5 rounded-xl"
+          className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl transition"
+          type="button"
         >
           Voltar
         </button>
       </div>
 
       {/* TABELA */}
-      <div className="bg-zinc-900 rounded-xl overflow-auto border border-zinc-800">
+      <div className="bg-zinc-900/70 rounded-2xl overflow-auto border border-zinc-800 shadow-2xl shadow-black/20">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-800">
+          <thead className="bg-zinc-800/90 text-zinc-200">
             <tr>
-              <th className="p-3 text-left">Mês</th>
+              <th className="p-4 text-left">Mes</th>
 
               {categories.map((cat) => (
-                <th key={cat} className="p-3 text-center">
+                <th key={cat} className="p-4 text-center whitespace-nowrap">
                   {cat}
                 </th>
               ))}
 
-              <th className="p-3 text-right">Total</th>
+              <th className="p-4 text-right text-green-300">Total</th>
             </tr>
           </thead>
 
@@ -292,34 +292,37 @@ export default function ExtratoTotalPage() {
               );
 
               return (
-                <tr key={m} className="border-t border-zinc-800">
-                  <td className="p-3">{monthName(m)}</td>
+                <tr
+                  key={m}
+                  className="border-t border-zinc-800 hover:bg-zinc-800/50 transition"
+                >
+                  <td className="p-4 font-semibold">{monthName(m)}</td>
 
                   {categories.map((cat) => (
-                    <td key={cat} className="p-3 text-center">
+                    <td key={cat} className="p-4 text-center whitespace-nowrap">
                       {monthData[cat]
                         ? formatMoney(monthData[cat])
-                        : "-"}
+                        : <span className="text-zinc-600">-</span>}
                     </td>
                   ))}
 
-                  <td className="p-3 text-right font-bold">
+                  <td className="p-4 text-right font-bold text-zinc-100 whitespace-nowrap">
                     {formatMoney(totalMes)}
                   </td>
                 </tr>
               );
             })}
 
-            <tr className="border-t border-zinc-700 bg-zinc-800 font-bold">
-              <td className="p-3">Total</td>
+            <tr className="border-t border-zinc-700 bg-zinc-800/95 font-bold">
+              <td className="p-4">Total</td>
 
               {categories.map((cat) => (
-                <td key={cat} className="p-3 text-center">
+                <td key={cat} className="p-4 text-center whitespace-nowrap">
                   {formatMoney(totalPorCategoria[cat] || 0)}
                 </td>
               ))}
 
-              <td className="p-3 text-right text-green-400">
+              <td className="p-4 text-right text-green-400 whitespace-nowrap">
                 {formatMoney(totalGeral)}
               </td>
             </tr>
@@ -330,7 +333,12 @@ export default function ExtratoTotalPage() {
       {/* GRÁFICOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
 
-        <div className="bg-zinc-900 p-3 rounded-xl">
+        <div className="bg-zinc-900/70 p-4 rounded-2xl border border-zinc-800">
+          <div className="mb-3">
+            <h2 className="font-semibold">Categorias</h2>
+            <p className="text-xs text-zinc-500">Distribuicao do total</p>
+          </div>
+
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie
@@ -357,7 +365,12 @@ export default function ExtratoTotalPage() {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-zinc-900 p-3 rounded-xl">
+        <div className="bg-zinc-900/70 p-4 rounded-2xl border border-zinc-800">
+          <div className="mb-3">
+            <h2 className="font-semibold">Mes a mes</h2>
+            <p className="text-xs text-zinc-500">Evolucao dos gastos</p>
+          </div>
+
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={barData}>
               <XAxis stroke="#a1a1aa" dataKey="name" />
