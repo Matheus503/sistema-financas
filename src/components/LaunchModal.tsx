@@ -49,7 +49,7 @@ const nubankCategories = [
   "Cabeleireiro",
   "Compras internet / Físicas",
   "Combustível",
-  "Consertos/Manut",
+  "Gastos Carro",
   "Pedágios",
   "Gastos Matheus",
   "Gastos Giovana",
