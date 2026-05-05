@@ -52,7 +52,9 @@ const nubankCategories = [
   "Consertos/Manut",
   "Pedágios",
   "Gastos Matheus",
-  "Gastos Giovana"
+  "Gastos Giovana",
+  "Academia",
+  "Doações"
 ];
 
 const resolveLauncherName = () => {
