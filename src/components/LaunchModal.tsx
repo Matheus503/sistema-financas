@@ -48,13 +48,13 @@ const nubankCategories = [
   "Uber e etc",
   "Cabeleireiro",
   "Compras internet / Físicas",
-  "Combustível",
   "Gastos Carro",
   "Pedágios",
   "Gastos Matheus",
   "Gastos Giovana",
   "Academia",
-  "Doações"
+  "Doações",
+  "Descontos antecipação Nu"
 ];
 
 const resolveLauncherName = () => {
