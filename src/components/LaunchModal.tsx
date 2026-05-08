@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { auth } from "../lib/auth";
 import { addTransaction, getTransactions } from "../services/transactionService";
 import {
@@ -124,7 +125,7 @@ export default function LaunchModal({
 
     setValue("");
     setNote("");
-    setDate("");
+    setDate(getTodayDateKey());
     setCategory("");
 
     const nubank = variableAccounts.find((acc) =>
@@ -146,13 +147,29 @@ export default function LaunchModal({
     if (!monthId || !auth.currentUser) return;
 
     const parsedValue = parseCurrency(value);
-    if (!parsedValue) return;
+    if (!parsedValue) {
+      toast.error("Informe o valor do lancamento.");
+      return;
+    }
 
     const selected = accounts.find((acc) => acc.id === selectedAccountId);
-    if (!selected) return;
+    if (!selected) {
+      toast.error("Selecione uma conta.");
+      return;
+    }
+
+    if (isNubankSelected && !category) {
+      toast.error("Selecione uma categoria.");
+      return;
+    }
 
     const launcherName = resolveLauncherName();
-    const launchDate = date || getTodayDateKey();
+    const launchDate = date;
+    if (!launchDate) {
+      toast.error("Informe a data do lancamento.");
+      return;
+    }
+
     let targetMonthId = monthId;
     let targetAccount = selected;
     let shouldRefreshMonths = false;
@@ -226,8 +243,9 @@ export default function LaunchModal({
     setValue("");
     setCategory("");
     setNote("");
-    setDate("");
+    setDate(getTodayDateKey());
     onClose();
+    toast.success("Lancamento feito com sucesso.");
   };
 
   return (
@@ -239,6 +257,7 @@ export default function LaunchModal({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Valor"
+          required
           className="w-full p-2 bg-zinc-800 rounded"
         />
 
@@ -253,6 +272,7 @@ export default function LaunchModal({
               setCategory("");
             }
           }}
+          required
           className="w-full p-2 bg-zinc-800 rounded"
         >
           <option value="">Selecione a conta</option>
@@ -267,6 +287,7 @@ export default function LaunchModal({
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
+            required
             className="w-full p-2 bg-zinc-800 rounded"
           >
             <option value="">Selecione a categoria</option>
@@ -289,6 +310,7 @@ export default function LaunchModal({
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
+          required
           className="w-full p-2 bg-zinc-800 rounded"
         />
 
@@ -306,7 +328,7 @@ export default function LaunchModal({
               setValue("");
               setCategory("");
               setNote("");
-              setDate("");
+              setDate(getTodayDateKey());
               onClose();
             }}
             className="bg-red-600 px-4 py-2 rounded"

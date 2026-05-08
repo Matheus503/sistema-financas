@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { auth } from "../../lib/auth";
 import { getAllMonths } from "../../services/monthService";
 import { getAccountsByMonth } from "../../services/accountService";
@@ -112,6 +113,13 @@ function ExtratoContent() {
   const parseCurrency = (value: string) => {
     if (!value) return 0;
     return Number(value.replace(/\./g, "").replace(",", "."));
+  };
+
+  const formatCurrencyInput = (value: number) => {
+    return Number(value || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   };
 
   const formatMonthLabel = (month: number, year: number) =>
@@ -320,7 +328,7 @@ function ExtratoContent() {
 
   const openEdit = (item: ExtratoItem) => {
     setEditItem(item);
-    setEditValue(String(item.value ?? ""));
+    setEditValue(formatCurrencyInput(Number(item.value ?? 0)));
     setShowEdit(true);
   };
 
@@ -340,6 +348,7 @@ function ExtratoContent() {
       setShowEdit(false);
       setEditItem(null);
       setEditValue("");
+      toast.success("Lancamento editado com sucesso.");
     } finally {
       setSaving(false);
     }
@@ -358,6 +367,7 @@ function ExtratoContent() {
 
     setShowDelete(false);
     setItemToDelete(null);
+    toast.success("Lancamento excluido com sucesso.");
   };
 
   return (

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { auth } from "../../lib/auth";
 import { createMonth, getAllMonths } from "../../services/monthService";
 import {
@@ -80,6 +81,7 @@ export default function DashboardPage() {
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState<any>(null);
+  const [showCreateMonthModal, setShowCreateMonthModal] = useState(false);
 
   const [showEdit, setShowEdit] = useState(false);
   const [editAccount, setEditAccount] = useState<any>(null);
@@ -108,6 +110,13 @@ export default function DashboardPage() {
   const parseCurrency = (value: string) => {
     if (!value) return 0;
     return Number(value.replace(/\./g, "").replace(",", "."));
+  };
+
+  const formatCurrencyInput = (value: number) => {
+    return Number(value || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   };
 
   const getInitials = (email: string) => {
@@ -141,6 +150,7 @@ export default function DashboardPage() {
     setShowForm(false);
     setCreateModal({ open: false, type: null });
     setShowDeleteModal(false);
+    setShowCreateMonthModal(false);
     setAccountToDelete(null);
     setShowEdit(false);
     setEditAccount(null);
@@ -194,7 +204,7 @@ export default function DashboardPage() {
     await loadData(m.id);
   };
 
-  const handleCreateNext = async () => {
+  const confirmCreateNext = async () => {
     const userNow = auth.currentUser;
     if (!userNow || !months.length) return;
 
@@ -217,6 +227,9 @@ export default function DashboardPage() {
     if (all.length > 0) {
       await loadMonth(all.length - 1, all);
     }
+
+    setShowCreateMonthModal(false);
+    toast.success("Novo mes criado com sucesso.");
   };
 
   const handleLogout = async () => {
@@ -241,13 +254,14 @@ export default function DashboardPage() {
 
     setShowDeleteModal(false);
     setAccountToDelete(null);
+    toast.success("Conta excluida com sucesso.");
   };
 
   const openEdit = (acc: any) => {
     if (acc.name?.includes("Nubank")) return;
 
     setEditAccount(acc);
-    setEditValue(String(acc.value || ""));
+    setEditValue(formatCurrencyInput(Number(acc.value || 0)));
     setShowEdit(true);
   };
 
@@ -263,6 +277,7 @@ export default function DashboardPage() {
     );
 
     setShowEdit(false);
+    toast.success("Valor editado com sucesso.");
   };
 
   const extratoHref = monthId ? `/extrato?monthId=${monthId}` : "/extrato";
@@ -285,7 +300,7 @@ export default function DashboardPage() {
           </Link>
 
           <button
-            onClick={handleCreateNext}
+            onClick={() => setShowCreateMonthModal(true)}
             className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl"
             type="button"
           >
@@ -480,6 +495,39 @@ export default function DashboardPage() {
                 type="button"
               >
                 Não
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CRIAR MES */}
+      {showCreateMonthModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 p-6 rounded-xl w-80 text-center border border-zinc-800">
+            <h2 className="mb-3 text-lg font-bold">
+              Criar novo mes?
+            </h2>
+
+            <p className="text-sm text-zinc-400 mb-5">
+              Deseja realmente criar um novo mes?
+            </p>
+
+            <div className="flex justify-between">
+              <button
+                onClick={confirmCreateNext}
+                className="bg-green-600 px-4 py-2 rounded"
+                type="button"
+              >
+                Sim
+              </button>
+
+              <button
+                onClick={() => setShowCreateMonthModal(false)}
+                className="bg-red-600 px-4 py-2 rounded"
+                type="button"
+              >
+                Cancelar
               </button>
             </div>
           </div>

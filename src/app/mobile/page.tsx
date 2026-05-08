@@ -52,6 +52,21 @@ export default function MobileDashboard() {
   const monthName = (m: number) =>
     ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][m - 1];
 
+  const getLauncherName = (transaction: any) => {
+    const raw =
+      transaction.launcherName ||
+      transaction.userName ||
+      "";
+
+    if (!raw) return "";
+
+    const normalized = String(raw).toLowerCase();
+    if (normalized.includes("matheus")) return "Matheus";
+    if (normalized.includes("giovana")) return "Giovana";
+
+    return String(raw).split("@")[0].split(" ")[0];
+  };
+
   // 🔹 carregar meses
   useEffect(() => {
     const load = async () => {
@@ -197,22 +212,31 @@ export default function MobileDashboard() {
         <div className="flex flex-col gap-2">
           {lastTransactions.map((t) => (
             <div key={t.id} className="border-b border-zinc-800 pb-2">
+              {(() => {
+                const launcherName = getLauncherName(t);
 
-              <div className="flex justify-between text-sm font-medium">
-                <span>
-                  {t.category || "Sem categoria"} - {formatDate(t.date)}
-                </span>
-              </div>
+                return (
+                  <>
+                    <div className="flex justify-between text-sm font-medium">
+                      <span>
+                        {t.category || "Sem categoria"} - {formatDate(t.date)}
+                      </span>
+                    </div>
 
-              <div className="flex justify-between items-center text-xs mt-1">
-                <span className="text-zinc-500">
-                  {t.note || ""}
-                </span>
+                    <div className="flex justify-between items-center text-xs mt-1">
+                      <span className="text-zinc-500">
+                        {launcherName
+                          ? `${launcherName}${t.note ? ` - ${t.note}` : ""}`
+                          : t.note || ""}
+                      </span>
 
-                <span className="text-red-400 font-semibold text-sm">
-                  {renderValue(Number(t.value))}
-                </span>
-              </div>
+                      <span className="text-red-400 font-semibold text-sm">
+                        {renderValue(Number(t.value))}
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
 
             </div>
           ))}

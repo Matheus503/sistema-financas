@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { createAccount } from "../services/accountService";
 
 type Props = {
@@ -43,6 +44,7 @@ export default function CreateAccountModal({
     setName("");
     setValue("");
     onClose();
+    toast.success("Conta criada com sucesso.");
   };
 
   return (
