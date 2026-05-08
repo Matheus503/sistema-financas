@@ -6,7 +6,10 @@ import { Eye, EyeOff } from "lucide-react";
 
 import { auth } from "../../lib/auth";
 import { getAllMonths } from "../../services/monthService";
-import { getTransactions } from "../../services/transactionService";
+import {
+  getTransactions,
+  updateTransaction,
+} from "../../services/transactionService";
 import { getAccountsByMonth } from "../../services/accountService";
 
 import LaunchModal from "../../components/LaunchModal";
@@ -24,6 +27,10 @@ export default function MobileDashboard() {
   const [openModal, setOpenModal] = useState(false);
   const [showValues, setShowValues] = useState(false);
 
+  // 🔥 edição rápida
+  const [editTransaction, setEditTransaction] = useState<any | null>(null);
+  const [editValue, setEditValue] = useState("");
+
   const formatMoney = (v: number) =>
     v.toLocaleString("pt-BR", {
       style: "currency",
@@ -35,7 +42,9 @@ export default function MobileDashboard() {
 
   const formatDate = (date: string) => {
     if (!date) return "";
+
     const dateKey = String(date).slice(0, 10);
+
     const match = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
 
     if (match) {
@@ -43,6 +52,7 @@ export default function MobileDashboard() {
     }
 
     const d = new Date(date);
+
     return d.toLocaleDateString("pt-BR", {
       day: "2-digit",
       month: "2-digit",
@@ -50,7 +60,20 @@ export default function MobileDashboard() {
   };
 
   const monthName = (m: number) =>
-    ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][m - 1];
+    [
+      "Jan",
+      "Fev",
+      "Mar",
+      "Abr",
+      "Mai",
+      "Jun",
+      "Jul",
+      "Ago",
+      "Set",
+      "Out",
+      "Nov",
+      "Dez",
+    ][m - 1];
 
   const getLauncherName = (transaction: any) => {
     const raw =
@@ -61,6 +84,7 @@ export default function MobileDashboard() {
     if (!raw) return "";
 
     const normalized = String(raw).toLowerCase();
+
     if (normalized.includes("matheus")) return "Matheus";
     if (normalized.includes("giovana")) return "Giovana";
 
@@ -71,14 +95,20 @@ export default function MobileDashboard() {
   useEffect(() => {
     const load = async () => {
       const user = auth.currentUser;
-      if (!user) return router.push("/");
+
+      if (!user) {
+        router.push("/");
+        return;
+      }
 
       const all = await getAllMonths();
+
       if (!all || all.length === 0) return;
 
       setMonths(all);
 
       const lastIndex = all.length - 1;
+
       setCurrentIndex(lastIndex);
       setMonthId(all[lastIndex].id);
     };
@@ -106,14 +136,18 @@ export default function MobileDashboard() {
   // 🔹 navegação
   const goPrev = () => {
     if (currentIndex <= 0) return;
+
     const newIndex = currentIndex - 1;
+
     setCurrentIndex(newIndex);
     setMonthId(months[newIndex].id);
   };
 
   const goNext = () => {
     if (currentIndex >= months.length - 1) return;
+
     const newIndex = currentIndex + 1;
+
     setCurrentIndex(newIndex);
     setMonthId(months[newIndex].id);
   };
@@ -144,14 +178,16 @@ export default function MobileDashboard() {
     const acc = accounts.find((a) =>
       a.name?.toLowerCase().includes("nubank")
     );
+
     return acc ? getAccountValue(acc) : 0;
   })();
 
   // 🔥 últimos 5 lançamentos
   const lastTransactions = [...transactions]
-    .sort((a, b) =>
-      new Date(b.date || 0).getTime() -
-      new Date(a.date || 0).getTime()
+    .sort(
+      (a, b) =>
+        new Date(b.date || 0).getTime() -
+        new Date(a.date || 0).getTime()
     )
     .slice(0, 5);
 
@@ -176,10 +212,20 @@ export default function MobileDashboard() {
       {/* SALDO */}
       <div className="bg-purple-600 p-5 rounded-2xl">
         <div className="flex justify-between items-center">
-          <p className="text-sm opacity-80">Saldo do mês</p>
+          <p className="text-sm opacity-80">
+            Saldo do mês
+          </p>
 
-          <button onClick={() => setShowValues((prev) => !prev)}>
-            {showValues ? <EyeOff size={20} /> : <Eye size={20} />}
+          <button
+            onClick={() =>
+              setShowValues((prev) => !prev)
+            }
+          >
+            {showValues ? (
+              <EyeOff size={20} />
+            ) : (
+              <Eye size={20} />
+            )}
           </button>
         </div>
 
@@ -190,7 +236,9 @@ export default function MobileDashboard() {
 
       {/* CARTÃO */}
       <div className="bg-zinc-900 p-4 rounded-2xl">
-        <p className="text-sm text-zinc-400">Cartão Nubank</p>
+        <p className="text-sm text-zinc-400">
+          Cartão Nubank
+        </p>
 
         <h2 className="text-xl font-bold text-red-400 mt-1">
           {renderValue(cartao)}
@@ -211,33 +259,49 @@ export default function MobileDashboard() {
 
         <div className="flex flex-col gap-2">
           {lastTransactions.map((t) => (
-            <div key={t.id} className="border-b border-zinc-800 pb-2">
+            <div
+              key={t.id}
+              className="border-b border-zinc-800 pb-2"
+            >
               {(() => {
-                const launcherName = getLauncherName(t);
+                const launcherName =
+                  getLauncherName(t);
 
                 return (
                   <>
                     <div className="flex justify-between text-sm font-medium">
                       <span>
-                        {t.category || "Sem categoria"} - {formatDate(t.date)}
+                        {t.category || "Sem categoria"} -{" "}
+                        {formatDate(t.date)}
                       </span>
                     </div>
 
                     <div className="flex justify-between items-center text-xs mt-1">
                       <span className="text-zinc-500">
                         {launcherName
-                          ? `${launcherName}${t.note ? ` - ${t.note}` : ""}`
+                          ? `${launcherName}${t.note
+                            ? ` - ${t.note}`
+                            : ""
+                          }`
                           : t.note || ""}
                       </span>
 
-                      <span className="text-red-400 font-semibold text-sm">
+                      {/* 🔥 EDITAR VALOR */}
+                      <button
+                        className="text-red-400 font-semibold text-sm"
+                        onClick={() => {
+                          setEditTransaction(t);
+                          setEditValue(
+                            String(t.value || "")
+                          );
+                        }}
+                      >
                         {renderValue(Number(t.value))}
-                      </span>
+                      </button>
                     </div>
                   </>
                 );
               })()}
-
             </div>
           ))}
         </div>
@@ -245,13 +309,74 @@ export default function MobileDashboard() {
 
       {/* BOTÃO */}
       <button
-        className="fixed bottom-6 right-6 bg-purple-600 w-16 h-16 rounded-full text-3xl"
+        className="fixed bottom-6 right-6 bg-purple-600 w-16 h-16 rounded-full text-3xl shadow-lg"
         onClick={() => setOpenModal(true)}
       >
         +
       </button>
 
-      {/* 🔥 LaunchModal (MESMA LÓGICA DO DESKTOP) */}
+      {/* 🔥 MODAL EDIÇÃO */}
+      {editTransaction && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-zinc-900 p-5 rounded-2xl w-full max-w-sm">
+
+            <h2 className="text-lg font-bold mb-4">
+              Editar valor
+            </h2>
+
+            <input
+              type="number"
+              value={editValue}
+              onChange={(e) =>
+                setEditValue(e.target.value)
+              }
+              className="w-full bg-zinc-800 rounded-xl p-3 outline-none"
+            />
+
+            <div className="flex gap-2 mt-4">
+
+              <button
+                className="flex-1 bg-green-600 py-3 rounded-xl font-semibold"
+                onClick={async () => {
+                  if (!monthId || !editTransaction)
+                    return;
+
+                  await updateTransaction(
+                    monthId,
+                    editTransaction.id,
+                    {
+                      value: Number(editValue),
+                    }
+                  );
+
+                  const refreshed =
+                    await getTransactions(monthId);
+
+                  setTransactions(refreshed);
+
+                  setEditTransaction(null);
+                  setEditValue("");
+                }}
+              >
+                Salvar
+              </button>
+
+              <button
+                className="flex-1 bg-red-600 py-3 rounded-xl font-semibold"
+                onClick={() => {
+                  setEditTransaction(null);
+                  setEditValue("");
+                }}
+              >
+                Cancelar
+              </button>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔥 MODAL LANÇAMENTO */}
       <LaunchModal
         open={openModal}
         onClose={() => setOpenModal(false)}
@@ -261,11 +386,14 @@ export default function MobileDashboard() {
         setTransactions={setTransactions}
         onMonthsChanged={async (targetMonthId) => {
           const refreshed = await getAllMonths();
+
           setMonths(refreshed);
 
-          const targetIndex = refreshed.findIndex(
-            (month: any) => month.id === targetMonthId
-          );
+          const targetIndex =
+            refreshed.findIndex(
+              (month: any) =>
+                month.id === targetMonthId
+            );
 
           if (targetIndex >= 0) {
             setCurrentIndex(targetIndex);
