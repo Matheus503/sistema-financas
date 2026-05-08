@@ -9,6 +9,7 @@ type Props = {
   onClose: () => void;
   monthId: string | null;
   type: string | null;
+  accounts: any[];
   setAccounts: React.Dispatch<React.SetStateAction<any[]>>;
 };
 
@@ -17,6 +18,7 @@ export default function CreateAccountModal({
   onClose,
   monthId,
   type,
+  accounts,
   setAccounts,
 }: Props) {
   const [name, setName] = useState("");
@@ -32,11 +34,22 @@ export default function CreateAccountModal({
   const handleCreate = async () => {
     if (!monthId || !name.trim() || !type) return;
 
+    const sameTypeAccounts = accounts.filter((acc) => acc.type === type);
+    const nextOrder =
+      sameTypeAccounts.length > 0
+        ? Math.max(
+            ...sameTypeAccounts.map((acc, index) =>
+              Number.isFinite(Number(acc.order)) ? Number(acc.order) : index
+            )
+          ) + 1
+        : 0;
+
     const newAcc = await createAccount(monthId, {
       name: name.trim(),
       type,
       value: parseCurrency(value),
       isPaid: false,
+      order: nextOrder,
     });
 
     setAccounts((prev) => [...prev, newAcc]);

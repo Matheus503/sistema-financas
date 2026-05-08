@@ -63,22 +63,38 @@ export const createMonth = async (
       collection(db, "months", prevMonthDoc.id, "accounts")
     );
 
-    for (const acc of prevAccounts.docs) {
-      const data = acc.data();
+    const orderedAccounts = prevAccounts.docs
+      .map((acc, index) => ({ acc, index, data: acc.data() }))
+      .sort((a: any, b: any) => {
+        const aOrder = Number.isFinite(Number(a.data.order))
+          ? Number(a.data.order)
+          : a.index;
+        const bOrder = Number.isFinite(Number(b.data.order))
+          ? Number(b.data.order)
+          : b.index;
+
+        if (a.data.type === b.data.type) return aOrder - bOrder;
+        return a.index - b.index;
+      });
+
+    for (const item of orderedAccounts) {
+      const data = item.data;
 
       await addDoc(collection(db, "months", monthRef.id, "accounts"), {
         name: data.name,
         type: data.type,
         value: Number(data.value || 0),
         isPaid: false,
+        order: Number.isFinite(Number(data.order)) ? Number(data.order) : item.index,
       });
     }
   } else {
-    for (const acc of defaultAccounts) {
+    for (const [index, acc] of defaultAccounts.entries()) {
       await addDoc(collection(db, "months", monthRef.id, "accounts"), {
         ...acc,
         value: 0,
         isPaid: false,
+        order: index,
       });
     }
   }

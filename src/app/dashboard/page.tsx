@@ -8,6 +8,8 @@ import { auth } from "../../lib/auth";
 import { createMonth, getAllMonths } from "../../services/monthService";
 import {
   deleteAccount,
+  updateAccountsOrder,
+  updateAccountExpectedValue,
   updateAccountValue,
 } from "../../services/accountService";
 
@@ -86,6 +88,9 @@ export default function DashboardPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [editAccount, setEditAccount] = useState<any>(null);
   const [editValue, setEditValue] = useState("");
+  const [showExpectedEdit, setShowExpectedEdit] = useState(false);
+  const [expectedAccount, setExpectedAccount] = useState<any>(null);
+  const [expectedValue, setExpectedValue] = useState("");
 
   const [showUserMenu, setShowUserMenu] = useState(false);
 
@@ -137,9 +142,27 @@ export default function DashboardPage() {
       .filter((a) => a.type === type)
       .reduce((sum, acc) => sum + getAccountValue(acc), 0);
 
+  const getExpectedAccountValue = (acc: any) => {
+    if (acc.name?.includes("Nubank")) {
+      return Number(acc.expectedValue || 0);
+    }
+
+    return getAccountValue(acc);
+  };
+
+  const getExpectedTotalByType = (type: string) =>
+    accounts
+      .filter((a) => a.type === type)
+      .reduce((sum, acc) => sum + getExpectedAccountValue(acc), 0);
+
   const totalCredits = getTotalByType("CREDIT");
   const totalFixed = getTotalByType("FIXED");
   const totalVariable = getTotalByType("VARIABLE");
+  const saldoPrevisto =
+    getExpectedTotalByType("CREDIT") -
+    accounts
+      .filter((a) => a.type !== "CREDIT")
+      .reduce((sum, acc) => sum + getExpectedAccountValue(acc), 0);
 
   const clearAppState = () => {
     setMonths([]);
@@ -155,6 +178,9 @@ export default function DashboardPage() {
     setShowEdit(false);
     setEditAccount(null);
     setEditValue("");
+    setShowExpectedEdit(false);
+    setExpectedAccount(null);
+    setExpectedValue("");
     setShowUserMenu(false);
     setShowValues(false);
   };
@@ -280,6 +306,73 @@ export default function DashboardPage() {
     toast.success("Valor editado com sucesso.");
   };
 
+  const openExpectedEdit = (acc: any) => {
+    setExpectedAccount(acc);
+    setExpectedValue(formatCurrencyInput(Number(acc.expectedValue || 0)));
+    setShowExpectedEdit(true);
+  };
+
+  const saveExpectedEdit = async () => {
+    if (!monthId || !expectedAccount) return;
+
+    const parsed = parseCurrency(expectedValue);
+
+    await updateAccountExpectedValue(monthId, expectedAccount.id, parsed);
+
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.id === expectedAccount.id ? { ...a, expectedValue: parsed } : a
+      )
+    );
+
+    setShowExpectedEdit(false);
+    setExpectedAccount(null);
+    setExpectedValue("");
+    toast.success("Valor previsto editado com sucesso.");
+  };
+
+  const handleReorderAccounts = async (
+    type: string,
+    draggedId: string,
+    targetId: string
+  ) => {
+    if (!monthId) return;
+
+    const typeAccounts = accounts.filter((acc) => acc.type === type);
+    const fromIndex = typeAccounts.findIndex((acc) => acc.id === draggedId);
+    const toIndex = typeAccounts.findIndex((acc) => acc.id === targetId);
+
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const reordered = [...typeAccounts];
+    const [draggedAccount] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, draggedAccount);
+
+    const orderedAccounts = reordered.map((acc, index) => ({
+      ...acc,
+      order: index,
+    }));
+    const orderedById = new Map(
+      orderedAccounts.map((acc) => [acc.id, acc])
+    );
+
+    setAccounts((prev) =>
+      prev.map((acc) =>
+        acc.type === type ? orderedById.get(acc.id) || acc : acc
+      )
+    );
+
+    await updateAccountsOrder(
+      monthId,
+      orderedAccounts.map((acc) => ({
+        id: acc.id,
+        order: acc.order,
+      }))
+    );
+
+    toast.success("Ordem atualizada com sucesso.");
+  };
+
   const extratoHref = monthId ? `/extrato?monthId=${monthId}` : "/extrato";
 
   return (
@@ -373,10 +466,23 @@ export default function DashboardPage() {
       </div>
 
       {/* SALDO */}
-      <div className="bg-purple-800 p-6 rounded-xl mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-sm">Saldo</h2>
-          <p className="text-2xl font-bold">{formatMoney(saldo)}</p>
+      <div className="bg-purple-800 p-6 rounded-xl mb-6 flex items-center justify-between gap-6">
+        <div className="flex items-stretch gap-8">
+          <div>
+            <h2 className="text-sm text-purple-100">Saldo real</h2>
+            <p className="text-2xl font-bold text-white">
+              {formatMoney(saldo)}
+            </p>
+          </div>
+
+          <div className="w-px bg-purple-300/30" />
+
+          <div>
+            <h2 className="text-sm text-purple-200">Saldo previsto</h2>
+            <p className="text-2xl font-bold text-purple-100">
+              {formatMoney(saldoPrevisto)}
+            </p>
+          </div>
         </div>
 
         <button
@@ -403,6 +509,7 @@ export default function DashboardPage() {
           onToggle={(acc) => handleTogglePaid(monthId!, acc)}
           onEdit={openEdit}
           onAdd={(type) => setCreateModal({ open: true, type })}
+          onReorder={handleReorderAccounts}
         />
 
         <AccountColumn
@@ -416,6 +523,7 @@ export default function DashboardPage() {
           onToggle={(acc) => handleTogglePaid(monthId!, acc)}
           onEdit={openEdit}
           onAdd={(type) => setCreateModal({ open: true, type })}
+          onReorder={handleReorderAccounts}
         />
 
         <AccountColumn
@@ -430,6 +538,8 @@ export default function DashboardPage() {
           onEdit={openEdit}
           onAdd={(type) => setCreateModal({ open: true, type })}
           onOpenStatement={() => router.push(extratoHref)}
+          onEditExpectedValue={openExpectedEdit}
+          onReorder={handleReorderAccounts}
         />
       </div>
 
@@ -459,6 +569,52 @@ export default function DashboardPage() {
 
               <button
                 onClick={() => setShowEdit(false)}
+                className="bg-red-600 px-4 py-2 rounded"
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR VALOR PREVISTO */}
+      {showExpectedEdit && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 p-6 rounded-xl w-80 border border-zinc-800">
+            <h2 className="mb-3 text-lg font-bold">
+              Editar valor previsto
+            </h2>
+
+            <p className="text-sm text-zinc-400 mb-3">
+              {expectedAccount?.name}
+            </p>
+
+            <input
+              value={expectedValue}
+              onChange={(e) =>
+                setExpectedValue(e.target.value.replace(/[^\d.,]/g, ""))
+              }
+              className="w-full p-2 bg-zinc-800 rounded mb-3"
+              placeholder="Valor previsto"
+            />
+
+            <div className="flex justify-between">
+              <button
+                onClick={saveExpectedEdit}
+                className="bg-green-600 px-4 py-2 rounded"
+                type="button"
+              >
+                Salvar
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowExpectedEdit(false);
+                  setExpectedAccount(null);
+                  setExpectedValue("");
+                }}
                 className="bg-red-600 px-4 py-2 rounded"
                 type="button"
               >
@@ -554,6 +710,7 @@ export default function DashboardPage() {
         onClose={() => setCreateModal({ open: false, type: null })}
         monthId={monthId}
         type={createModal.type}
+        accounts={accounts}
         setAccounts={setAccounts}
       />
     </div>
