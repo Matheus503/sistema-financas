@@ -12,10 +12,12 @@ import {
   updateAccountExpectedValue,
   updateAccountValue,
 } from "../../services/accountService";
+import type { FinanceAccount } from "../../services/accountService";
 
 import AccountColumn from "../../components/AccountColumn";
 import LaunchModal from "../../components/LaunchModal";
 import CreateAccountModal from "../../components/CreateAccountModal";
+import EditAccountModal from "../../components/EditAccountModal";
 import { useFinance } from "../../hooks/useFinance";
 import { ALLOWED_USERS } from "../../config/allowedUsers";
 
@@ -88,6 +90,7 @@ export default function DashboardPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [editAccount, setEditAccount] = useState<any>(null);
   const [editValue, setEditValue] = useState("");
+  const [detailsAccount, setDetailsAccount] = useState<FinanceAccount | null>(null);
   const [showExpectedEdit, setShowExpectedEdit] = useState(false);
   const [expectedAccount, setExpectedAccount] = useState<any>(null);
   const [expectedValue, setExpectedValue] = useState("");
@@ -178,6 +181,7 @@ export default function DashboardPage() {
     setShowEdit(false);
     setEditAccount(null);
     setEditValue("");
+    setDetailsAccount(null);
     setShowExpectedEdit(false);
     setExpectedAccount(null);
     setExpectedValue("");
@@ -508,6 +512,7 @@ export default function DashboardPage() {
           onDelete={askDelete}
           onToggle={(acc) => handleTogglePaid(monthId!, acc)}
           onEdit={openEdit}
+          onEditDetails={setDetailsAccount}
           onAdd={(type) => setCreateModal({ open: true, type })}
           onReorder={handleReorderAccounts}
         />
@@ -522,6 +527,7 @@ export default function DashboardPage() {
           onDelete={askDelete}
           onToggle={(acc) => handleTogglePaid(monthId!, acc)}
           onEdit={openEdit}
+          onEditDetails={setDetailsAccount}
           onAdd={(type) => setCreateModal({ open: true, type })}
           onReorder={handleReorderAccounts}
         />
@@ -536,6 +542,7 @@ export default function DashboardPage() {
           onDelete={askDelete}
           onToggle={(acc) => handleTogglePaid(monthId!, acc)}
           onEdit={openEdit}
+          onEditDetails={setDetailsAccount}
           onAdd={(type) => setCreateModal({ open: true, type })}
           onOpenStatement={() => router.push(extratoHref)}
           onEditExpectedValue={openExpectedEdit}
@@ -711,6 +718,14 @@ export default function DashboardPage() {
         monthId={monthId}
         type={createModal.type}
         accounts={accounts}
+        setAccounts={setAccounts}
+      />
+
+      <EditAccountModal
+        open={Boolean(detailsAccount)}
+        onClose={() => setDetailsAccount(null)}
+        monthId={monthId}
+        account={detailsAccount}
         setAccounts={setAccounts}
       />
     </div>

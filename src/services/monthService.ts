@@ -19,6 +19,40 @@ const defaultAccounts = [
   { name: "Energia RP (13)", type: "VARIABLE" },
 ];
 
+type MonthDoc = {
+  id: string;
+  year?: number;
+  month?: number;
+  [key: string]: unknown;
+};
+
+type AccountDoc = {
+  index: number;
+  data: {
+    name?: unknown;
+    type?: unknown;
+    value?: unknown;
+    order?: unknown;
+    dia_vencimento?: unknown;
+  };
+};
+
+const getValidDueDay = (dia_vencimento: unknown) => {
+  if (
+    dia_vencimento === undefined ||
+    dia_vencimento === null ||
+    dia_vencimento === ""
+  ) {
+    return undefined;
+  }
+
+  const dueDay = Number(dia_vencimento);
+
+  return Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31
+    ? dueDay
+    : undefined;
+};
+
 export const createMonth = async (
   year: number,
   month: number,
@@ -27,26 +61,23 @@ export const createMonth = async (
   const label = `${year}-${String(month).padStart(2, "0")}`;
   const monthsSnap = await getDocs(collection(db, "months"));
 
-  let existingMonthId: string | null = null;
-  let prevMonthDoc: any = null;
+  const months = monthsSnap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  })) as MonthDoc[];
 
-  monthsSnap.forEach((d) => {
-    const data = d.data();
+  const existingMonth = months.find(
+    (item) => item.year === year && item.month === month
+  );
 
-    if (data.year === year && data.month === month) {
-      existingMonthId = d.id;
-    }
+  const prevMonthDoc = months.find(
+    (item) =>
+      (item.year === year && item.month === month - 1) ||
+      (month === 1 && item.year === year - 1 && item.month === 12)
+  );
 
-    if (
-      (data.year === year && data.month === month - 1) ||
-      (month === 1 && data.year === year - 1 && data.month === 12)
-    ) {
-      prevMonthDoc = { id: d.id, ...data };
-    }
-  });
-
-  if (existingMonthId) {
-    return existingMonthId;
+  if (existingMonth) {
+    return existingMonth.id;
   }
 
   const monthRef = await addDoc(collection(db, "months"), {
@@ -64,8 +95,8 @@ export const createMonth = async (
     );
 
     const orderedAccounts = prevAccounts.docs
-      .map((acc, index) => ({ acc, index, data: acc.data() }))
-      .sort((a: any, b: any) => {
+      .map((acc, index) => ({ index, data: acc.data() } as AccountDoc))
+      .sort((a, b) => {
         const aOrder = Number.isFinite(Number(a.data.order))
           ? Number(a.data.order)
           : a.index;
@@ -79,13 +110,17 @@ export const createMonth = async (
 
     for (const item of orderedAccounts) {
       const data = item.data;
+      const dueDay = getValidDueDay(data.dia_vencimento);
 
       await addDoc(collection(db, "months", monthRef.id, "accounts"), {
         name: data.name,
         type: data.type,
         value: Number(data.value || 0),
         isPaid: false,
-        order: Number.isFinite(Number(data.order)) ? Number(data.order) : item.index,
+        order: Number.isFinite(Number(data.order))
+          ? Number(data.order)
+          : item.index,
+        ...(dueDay === undefined ? {} : { dia_vencimento: dueDay }),
       });
     }
   } else {
@@ -108,11 +143,11 @@ export const getAllMonths = async () => {
   const months = snap.docs.map((doc) => ({
     id: doc.id,
     ...doc.data(),
-  }));
+  })) as MonthDoc[];
 
-  return months.sort((a: any, b: any) => {
-    if (a.year === b.year) return a.month - b.month;
-    return a.year - b.year;
+  return months.sort((a, b) => {
+    if (a.year === b.year) return Number(a.month) - Number(b.month);
+    return Number(a.year) - Number(b.year);
   });
 };
 

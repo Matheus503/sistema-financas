@@ -1,20 +1,23 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { formatAccountNameWithDueDay } from "../services/accountService";
+import type { FinanceAccount } from "../services/accountService";
 
 type Props = {
   title: string;
   type: string;
-  accounts: any[];
+  accounts: FinanceAccount[];
   totalValue: number;
-  getAccountValue: (acc: any) => number;
+  getAccountValue: (acc: FinanceAccount) => number;
   formatMoney: (v: number) => string;
-  onDelete: (acc: any) => void;
-  onToggle: (acc: any) => void;
-  onEdit: (acc: any) => void;
+  onDelete: (acc: FinanceAccount) => void;
+  onToggle: (acc: FinanceAccount) => void;
+  onEdit: (acc: FinanceAccount) => void;
+  onEditDetails: (acc: FinanceAccount) => void;
   onAdd: (type: string) => void;
   onOpenStatement?: () => void;
-  onEditExpectedValue?: (acc: any) => void;
+  onEditExpectedValue?: (acc: FinanceAccount) => void;
   onReorder?: (type: string, draggedId: string, targetId: string) => void;
 };
 
@@ -28,6 +31,7 @@ export default function AccountColumn({
   onDelete,
   onToggle,
   onEdit,
+  onEditDetails,
   onAdd,
   onOpenStatement,
   onEditExpectedValue,
@@ -53,14 +57,33 @@ export default function AccountColumn({
       .map(({ account }) => account);
   }, [accounts, type]);
 
+  const dueDayTotals = useMemo(() => {
+    const totals = new Map<number, number>();
+
+    columnAccounts.forEach((account) => {
+      const dueDay = Number(account.dia_vencimento);
+
+      if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return;
+
+      totals.set(dueDay, (totals.get(dueDay) || 0) + getAccountValue(account));
+    });
+
+    return Array.from(totals.entries()).sort(
+      ([dayA], [dayB]) => dayA - dayB
+    );
+  }, [columnAccounts, getAccountValue]);
+
   return (
     <div className="bg-zinc-900/70 p-4 rounded-2xl border border-zinc-800">
       <div className="flex justify-between items-center mb-4">
         <div>
           <h2 className="font-semibold">{title}</h2>
-          <p className="text-xs text-zinc-400">
-            Total: {formatMoney(totalValue)}
-          </p>
+          <div className="flex flex-wrap gap-x-2 text-xs text-zinc-400">
+            <span>Total: {formatMoney(totalValue)}</span>
+            {dueDayTotals.map(([day, value]) => (
+              <span key={day}>| Dia {day}: {formatMoney(value)}</span>
+            ))}
+          </div>
         </div>
 
         <button
@@ -114,7 +137,15 @@ export default function AccountColumn({
                   ${isDragging ? "opacity-50 ring-2 ring-purple-400" : ""}
                 `}
               >
-                <span className="pr-2">{acc.name}</span>
+                <span
+                  className="pr-2 cursor-pointer hover:underline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditDetails(acc);
+                  }}
+                >
+                  {formatAccountNameWithDueDay(acc)}
+                </span>
 
                 <div
                   className="flex gap-2 items-center"

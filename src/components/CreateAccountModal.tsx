@@ -3,14 +3,15 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { createAccount } from "../services/accountService";
+import type { FinanceAccount } from "../services/accountService";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   monthId: string | null;
   type: string | null;
-  accounts: any[];
-  setAccounts: React.Dispatch<React.SetStateAction<any[]>>;
+  accounts: FinanceAccount[];
+  setAccounts: React.Dispatch<React.SetStateAction<FinanceAccount[]>>;
 };
 
 export default function CreateAccountModal({
@@ -23,16 +24,39 @@ export default function CreateAccountModal({
 }: Props) {
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
+  const [dueDay, setDueDay] = useState("");
 
   const parseCurrency = (v: string) => {
     if (!v) return 0;
     return Number(v.replace(/\./g, "").replace(",", "."));
   };
 
+  const handleDueDayChange = (nextValue: string) => {
+    if (!nextValue) {
+      setDueDay("");
+      return;
+    }
+
+    if (!/^\d+$/.test(nextValue)) return;
+
+    const parsed = Math.min(Math.max(Number(nextValue), 1), 31);
+    setDueDay(String(parsed));
+  };
+
   if (!open) return null;
 
   const handleCreate = async () => {
     if (!monthId || !name.trim() || !type) return;
+
+    const parsedDueDay = dueDay ? Number(dueDay) : undefined;
+
+    if (
+      parsedDueDay !== undefined &&
+      (!Number.isInteger(parsedDueDay) || parsedDueDay < 1 || parsedDueDay > 31)
+    ) {
+      toast.error("Informe um dia de vencimento entre 1 e 31.");
+      return;
+    }
 
     const sameTypeAccounts = accounts.filter((acc) => acc.type === type);
     const nextOrder =
@@ -48,6 +72,7 @@ export default function CreateAccountModal({
       name: name.trim(),
       type,
       value: parseCurrency(value),
+      dia_vencimento: parsedDueDay,
       isPaid: false,
       order: nextOrder,
     });
@@ -56,6 +81,7 @@ export default function CreateAccountModal({
 
     setName("");
     setValue("");
+    setDueDay("");
     onClose();
     toast.success("Conta criada com sucesso.");
   };
@@ -81,6 +107,17 @@ export default function CreateAccountModal({
           className="w-full p-2 bg-zinc-800 rounded mb-3"
         />
 
+        <input
+          type="number"
+          min={1}
+          max={31}
+          step={1}
+          value={dueDay}
+          onChange={(e) => handleDueDayChange(e.target.value)}
+          placeholder="Dia de vencimento (1 a 31)"
+          className="w-full p-2 bg-zinc-800 rounded mb-3"
+        />
+
         <div className="flex justify-between">
           <button
             onClick={handleCreate}
@@ -94,6 +131,7 @@ export default function CreateAccountModal({
             onClick={() => {
               setName("");
               setValue("");
+              setDueDay("");
               onClose();
             }}
             className="bg-red-600 px-4 py-2 rounded"

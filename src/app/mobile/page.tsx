@@ -17,9 +17,14 @@ import {
   deleteTransaction,
 } from "../../services/transactionService";
 
-import { getAccountsByMonth } from "../../services/accountService";
+import {
+  formatAccountNameWithDueDay,
+  getAccountsByMonth,
+} from "../../services/accountService";
+import type { FinanceAccount } from "../../services/accountService";
 
 import LaunchModal from "../../components/LaunchModal";
+import EditAccountModal from "../../components/EditAccountModal";
 
 export default function MobileDashboard() {
   const router = useRouter();
@@ -33,6 +38,8 @@ export default function MobileDashboard() {
     useState<any[]>([]);
 
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [detailsAccount, setDetailsAccount] =
+    useState<FinanceAccount | null>(null);
 
   const [openModal, setOpenModal] =
     useState(false);
@@ -267,18 +274,16 @@ export default function MobileDashboard() {
         0
       );
 
-  const cartao = (() => {
-    const acc = accounts.find(
-      (a) =>
-        a.name
-          ?.toLowerCase()
-          .includes("nubank")
-    );
+  const cartaoAccount = accounts.find(
+    (a) =>
+      a.name
+        ?.toLowerCase()
+        .includes("nubank")
+  );
 
-    return acc
-      ? getAccountValue(acc)
-      : 0;
-  })();
+  const cartao = cartaoAccount
+    ? getAccountValue(cartaoAccount)
+    : 0;
 
   // 🔥 últimos lançamentos
   const lastTransactions = [
@@ -361,8 +366,21 @@ export default function MobileDashboard() {
       {/* CARTÃO */}
       <div className="bg-zinc-900 p-4 rounded-2xl">
 
-        <p className="text-sm text-zinc-400">
-          Cartão Nubank
+        <p
+          className="text-sm text-zinc-400"
+          onClick={() => {
+            if (cartaoAccount) {
+              setDetailsAccount(
+                cartaoAccount
+              );
+            }
+          }}
+        >
+          {cartaoAccount
+            ? formatAccountNameWithDueDay(
+                cartaoAccount
+              )
+            : "Cartão Nubank"}
         </p>
 
         <h2 className="text-xl font-bold text-red-400 mt-1">
@@ -670,6 +688,16 @@ export default function MobileDashboard() {
             );
           }
         }}
+      />
+
+      <EditAccountModal
+        open={Boolean(detailsAccount)}
+        onClose={() =>
+          setDetailsAccount(null)
+        }
+        monthId={monthId}
+        account={detailsAccount}
+        setAccounts={setAccounts}
       />
 
     </div>

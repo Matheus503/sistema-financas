@@ -8,14 +8,8 @@ import {
   getAccountsByMonth,
   updateAccountValue,
 } from "../services/accountService";
+import type { FinanceAccount } from "../services/accountService";
 import { createMonth, getAllMonths } from "../services/monthService";
-
-type FinanceAccount = {
-  id: string;
-  name?: string;
-  type?: string;
-  value?: number;
-};
 
 type MonthDoc = {
   id: string;
