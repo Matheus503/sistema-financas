@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { formatAccountNameWithDueDay } from "../services/accountService";
 import type { FinanceAccount } from "../services/accountService";
 
@@ -31,6 +31,14 @@ const getPaymentDayForDueDay = (dueDay: number) => {
   return paymentDay ?? dueDay;
 };
 
+const getValidDueDay = (account: FinanceAccount) => {
+  const dueDay = Number(account.dia_vencimento);
+
+  return Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31
+    ? dueDay
+    : null;
+};
+
 export default function AccountColumn({
   title,
   type,
@@ -45,16 +53,18 @@ export default function AccountColumn({
   onAdd,
   onOpenStatement,
   onEditExpectedValue,
-  onReorder,
 }: Props) {
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [suppressClick, setSuppressClick] = useState(false);
-
   const columnAccounts = useMemo(() => {
     return accounts
       .filter((a) => a.type === type)
       .map((account, index) => ({ account, index }))
       .sort((a, b) => {
+        const aDueDay = getValidDueDay(a.account);
+        const bDueDay = getValidDueDay(b.account);
+        const aSortDay =
+          aDueDay === null ? Number.POSITIVE_INFINITY : aDueDay;
+        const bSortDay =
+          bDueDay === null ? Number.POSITIVE_INFINITY : bDueDay;
         const aOrder = Number.isFinite(Number(a.account.order))
           ? Number(a.account.order)
           : a.index;
@@ -62,6 +72,7 @@ export default function AccountColumn({
           ? Number(b.account.order)
           : b.index;
 
+        if (aSortDay !== bSortDay) return aSortDay - bSortDay;
         return aOrder - bOrder;
       })
       .map(({ account }) => account);
@@ -71,9 +82,8 @@ export default function AccountColumn({
     const totals = new Map<number, number>();
 
     columnAccounts.forEach((account) => {
-      const dueDay = Number(account.dia_vencimento);
-
-      if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return;
+      const dueDay = getValidDueDay(account);
+      if (dueDay === null) return;
 
       const paymentDay = getPaymentDayForDueDay(dueDay);
 
@@ -114,42 +124,19 @@ export default function AccountColumn({
         {columnAccounts
           .map((acc) => {
             const isNubank = acc.name?.includes("Nubank");
-            const isDragging = draggedId === acc.id;
 
             return (
               <div
                 key={acc.id}
-                draggable
-                onDragStart={() => {
-                  setDraggedId(acc.id);
-                  setSuppressClick(true);
-                }}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-
-                  if (draggedId && draggedId !== acc.id) {
-                    onReorder?.(type, draggedId, acc.id);
-                  }
-
-                  setDraggedId(null);
-                  window.setTimeout(() => setSuppressClick(false), 0);
-                }}
-                onDragEnd={() => {
-                  setDraggedId(null);
-                  window.setTimeout(() => setSuppressClick(false), 0);
-                }}
                 onClick={() => {
-                  if (suppressClick) return;
                   onToggle(acc);
                 }}
-                className={`flex justify-between items-center p-3 rounded-xl cursor-grab active:cursor-grabbing transition border
+                className={`flex justify-between items-center p-3 rounded-xl cursor-pointer transition border
                   ${
                     acc.isPaid
                       ? "bg-green-500/18 border-l-4 border-l-green-400 border-green-400/25 hover:bg-green-500/24"
                       : "bg-red-500/18 border-l-4 border-l-red-400 border-red-400/25 hover:bg-red-500/24"
                   }
-                  ${isDragging ? "opacity-50 ring-2 ring-purple-400" : ""}
                 `}
               >
                 <span
