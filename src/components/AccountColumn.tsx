@@ -21,6 +21,16 @@ type Props = {
   onReorder?: (type: string, draggedId: string, targetId: string) => void;
 };
 
+const paymentDays = [4, 10, 15, 19];
+
+const getPaymentDayForDueDay = (dueDay: number) => {
+  const paymentDay = paymentDays
+    .filter((day) => day <= dueDay)
+    .at(-1);
+
+  return paymentDay ?? dueDay;
+};
+
 export default function AccountColumn({
   title,
   type,
@@ -65,7 +75,12 @@ export default function AccountColumn({
 
       if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return;
 
-      totals.set(dueDay, (totals.get(dueDay) || 0) + getAccountValue(account));
+      const paymentDay = getPaymentDayForDueDay(dueDay);
+
+      totals.set(
+        paymentDay,
+        (totals.get(paymentDay) || 0) + getAccountValue(account)
+      );
     });
 
     return Array.from(totals.entries()).sort(
