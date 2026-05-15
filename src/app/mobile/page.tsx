@@ -21,6 +21,7 @@ import {
   formatAccountNameWithDueDay,
   getAccountsByMonth,
 } from "../../services/accountService";
+
 import type { FinanceAccount } from "../../services/accountService";
 
 import LaunchModal from "../../components/LaunchModal";
@@ -30,14 +31,18 @@ export default function MobileDashboard() {
   const router = useRouter();
 
   const [months, setMonths] = useState<any[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] =
+    useState(0);
+
   const [monthId, setMonthId] =
     useState<string | null>(null);
 
   const [transactions, setTransactions] =
     useState<any[]>([]);
 
-  const [accounts, setAccounts] = useState<any[]>([]);
+  const [accounts, setAccounts] =
+    useState<any[]>([]);
+
   const [detailsAccount, setDetailsAccount] =
     useState<FinanceAccount | null>(null);
 
@@ -55,8 +60,10 @@ export default function MobileDashboard() {
     useState("");
 
   // 🔥 exclusão
-  const [deleteTransactionData, setDeleteTransactionData] =
-    useState<any | null>(null);
+  const [
+    deleteTransactionData,
+    setDeleteTransactionData,
+  ] = useState<any | null>(null);
 
   const formatMoney = (v: number) =>
     v.toLocaleString("pt-BR", {
@@ -72,7 +79,10 @@ export default function MobileDashboard() {
   const formatDate = (date: string) => {
     if (!date) return "";
 
-    const dateKey = String(date).slice(0, 10);
+    const dateKey = String(date).slice(
+      0,
+      10
+    );
 
     const match = dateKey.match(
       /^(\d{4})-(\d{2})-(\d{2})$/
@@ -134,10 +144,44 @@ export default function MobileDashboard() {
       .split(" ")[0];
   };
 
+  // 🔥 máscara monetária
+  const formatCurrencyInput = (
+    value: string
+  ) => {
+    const numbers = value.replace(
+      /\D/g,
+      ""
+    );
+
+    const amount =
+      Number(numbers) / 100;
+
+    return amount.toLocaleString(
+      "pt-BR",
+      {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }
+    );
+  };
+
+  const parseCurrency = (
+    v: string
+  ) => {
+    if (!v) return 0;
+
+    return Number(
+      v
+        .replace(/\./g, "")
+        .replace(",", ".")
+    );
+  };
+
   // 🔹 carregar meses
   useEffect(() => {
     const load = async () => {
-      const user = auth.currentUser;
+      const user =
+        auth.currentUser;
 
       if (!user) {
         router.push("/");
@@ -274,16 +318,19 @@ export default function MobileDashboard() {
         0
       );
 
-  const cartaoAccount = accounts.find(
-    (a) =>
+  const cartaoAccount =
+    accounts.find((a) =>
       a.name
         ?.toLowerCase()
         .includes("nubank")
-  );
+    );
 
-  const cartao = cartaoAccount
-    ? getAccountValue(cartaoAccount)
-    : 0;
+  const cartao =
+    cartaoAccount
+      ? getAccountValue(
+          cartaoAccount
+        )
+      : 0;
 
   // 🔥 últimos lançamentos
   const lastTransactions = [
@@ -307,9 +354,7 @@ export default function MobileDashboard() {
       <div className="flex justify-center">
         <div className="flex items-center gap-4 bg-zinc-900 px-5 py-2 rounded-full">
 
-          <button
-            onClick={goPrev}
-          >
+          <button onClick={goPrev}>
             ←
           </button>
 
@@ -323,9 +368,7 @@ export default function MobileDashboard() {
               : ""}
           </span>
 
-          <button
-            onClick={goNext}
-          >
+          <button onClick={goNext}>
             →
           </button>
 
@@ -396,7 +439,8 @@ export default function MobileDashboard() {
           Últimos lançamentos
         </p>
 
-        {lastTransactions.length === 0 && (
+        {lastTransactions.length ===
+          0 && (
           <p className="text-zinc-500 text-sm">
             Nenhum lançamento ainda
           </p>
@@ -455,9 +499,15 @@ export default function MobileDashboard() {
                               );
 
                               setEditValue(
-                                String(
+                                Number(
                                   t.value ||
-                                    ""
+                                    0
+                                ).toLocaleString(
+                                  "pt-BR",
+                                  {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  }
                                 )
                               );
                             }}
@@ -517,11 +567,14 @@ export default function MobileDashboard() {
             </h2>
 
             <input
-              type="number"
+              type="tel"
+              inputMode="decimal"
               value={editValue}
               onChange={(e) =>
                 setEditValue(
-                  e.target.value
+                  formatCurrencyInput(
+                    e.target.value
+                  )
                 )
               }
               className="w-full bg-zinc-800 rounded-xl p-3 outline-none"
@@ -543,7 +596,7 @@ export default function MobileDashboard() {
                     editTransaction.id,
                     {
                       value:
-                        Number(
+                        parseCurrency(
                           editValue
                         ),
                     }
@@ -691,9 +744,13 @@ export default function MobileDashboard() {
       />
 
       <EditAccountModal
-        open={Boolean(detailsAccount)}
+        open={Boolean(
+          detailsAccount
+        )}
         onClose={() =>
-          setDetailsAccount(null)
+          setDetailsAccount(
+            null
+          )
         }
         monthId={monthId}
         account={detailsAccount}
