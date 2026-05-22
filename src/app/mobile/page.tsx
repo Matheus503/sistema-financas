@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   Eye,
   EyeOff,
+  Menu,
   Trash2,
+  X,
 } from "lucide-react";
 
 import { auth } from "../../lib/auth";
@@ -53,6 +55,14 @@ export default function MobileDashboard() {
 
   const [openModal, setOpenModal] =
     useState(false);
+
+  const [isSideMenuOpen, setIsSideMenuOpen] =
+    useState(false);
+
+  const [
+    showAccountMenu,
+    setShowAccountMenu,
+  ] = useState(false);
 
   const [showValues, setShowValues] =
     useState(false);
@@ -166,6 +176,17 @@ export default function MobileDashboard() {
     return "matheus";
   };
 
+  const isCurrentUserMatheus = () => {
+    const raw = `${
+      auth.currentUser?.displayName ||
+      ""
+    } ${
+      auth.currentUser?.email || ""
+    }`.toLowerCase();
+
+    return raw.includes("matheus");
+  };
+
   // 🔥 máscara monetária
   const formatCurrencyInput = (
     value: string
@@ -212,6 +233,10 @@ export default function MobileDashboard() {
 
       setLauncherFilter(
         getCurrentUserFilter()
+      );
+
+      setShowAccountMenu(
+        isCurrentUserMatheus()
       );
 
       const all =
@@ -364,8 +389,92 @@ export default function MobileDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 py-6 flex flex-col gap-5">
 
+      {showAccountMenu &&
+        isSideMenuOpen && (
+          <div className="fixed inset-0 z-50 flex">
+            <button
+              className="absolute inset-0 bg-black/60"
+              onClick={() =>
+                setIsSideMenuOpen(false)
+              }
+              type="button"
+              aria-label="Fechar menu"
+            />
+
+            <aside className="relative h-full w-72 max-w-[80vw] bg-zinc-950 border-r border-zinc-800 p-5 shadow-2xl">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="font-semibold">
+                  Menu
+                </h2>
+
+                <button
+                  onClick={() =>
+                    setIsSideMenuOpen(false)
+                  }
+                  type="button"
+                  aria-label="Fechar menu"
+                  className="rounded-full bg-zinc-900 p-2 text-zinc-300"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <nav className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSideMenuOpen(false);
+                    router.push(
+                      "/mobile/creditos"
+                    );
+                  }}
+                  className="w-full rounded-xl bg-zinc-900 px-4 py-3 text-left text-sm font-medium text-zinc-100 border border-zinc-800"
+                >
+                  Créditos
+                </button>
+
+                {[
+                  {
+                    label: "Contas Fixas",
+                    href: "/mobile/fixas",
+                  },
+                  {
+                    label: "Contas Variáveis",
+                    href: "/mobile/variaveis",
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.href}
+                    type="button"
+                    onClick={() => {
+                      setIsSideMenuOpen(false);
+                      router.push(item.href);
+                    }}
+                    className="w-full rounded-xl bg-zinc-900 px-4 py-3 text-left text-sm font-medium text-zinc-100 border border-zinc-800"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+            </aside>
+          </div>
+        )}
+
       {/* HEADER */}
-      <div className="flex justify-center">
+      <div className="relative flex items-center justify-center">
+        {showAccountMenu && (
+          <button
+            onClick={() =>
+              setIsSideMenuOpen(true)
+            }
+            type="button"
+            aria-label="Abrir menu"
+            className="absolute left-0 rounded-full bg-zinc-900 p-2 text-zinc-200 border border-zinc-800"
+          >
+            <Menu size={20} />
+          </button>
+        )}
+
         <div className="flex items-center gap-4 bg-zinc-900 px-5 py-2 rounded-full">
 
           <button onClick={goPrev}>
