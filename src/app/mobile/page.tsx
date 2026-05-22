@@ -27,6 +27,11 @@ import type { FinanceAccount } from "../../services/accountService";
 import LaunchModal from "../../components/LaunchModal";
 import EditAccountModal from "../../components/EditAccountModal";
 
+type LauncherFilter =
+  | "matheus"
+  | "giovana"
+  | "all";
+
 export default function MobileDashboard() {
   const router = useRouter();
 
@@ -51,6 +56,9 @@ export default function MobileDashboard() {
 
   const [showValues, setShowValues] =
     useState(false);
+
+  const [launcherFilter, setLauncherFilter] =
+    useState<LauncherFilter>("matheus");
 
   // 🔥 edição rápida
   const [editTransaction, setEditTransaction] =
@@ -144,6 +152,20 @@ export default function MobileDashboard() {
       .split(" ")[0];
   };
 
+  const getCurrentUserFilter = () => {
+    const raw = `${
+      auth.currentUser?.displayName ||
+      ""
+    } ${
+      auth.currentUser?.email || ""
+    }`.toLowerCase();
+
+    if (raw.includes("giovana"))
+      return "giovana";
+
+    return "matheus";
+  };
+
   // 🔥 máscara monetária
   const formatCurrencyInput = (
     value: string
@@ -187,6 +209,10 @@ export default function MobileDashboard() {
         router.push("/");
         return;
       }
+
+      setLauncherFilter(
+        getCurrentUserFilter()
+      );
 
       const all =
         await getAllMonths();
@@ -294,30 +320,6 @@ export default function MobileDashboard() {
     );
   };
 
-  const saldo =
-    accounts
-      .filter(
-        (a) =>
-          a.type === "CREDIT"
-      )
-      .reduce(
-        (sum, acc) =>
-          sum +
-          getAccountValue(acc),
-        0
-      ) -
-    accounts
-      .filter(
-        (a) =>
-          a.type !== "CREDIT"
-      )
-      .reduce(
-        (sum, acc) =>
-          sum +
-          getAccountValue(acc),
-        0
-      );
-
   const cartaoAccount =
     accounts.find((a) =>
       a.name
@@ -332,9 +334,22 @@ export default function MobileDashboard() {
         )
       : 0;
 
-  // 🔥 últimos lançamentos
-  const lastTransactions = [
-    ...transactions,
+  const filteredTransactions =
+    transactions.filter((transaction) => {
+      const launcherName =
+        getLauncherName(transaction);
+
+      if (launcherFilter === "all")
+        return true;
+
+      return (
+        launcherName.toLowerCase() ===
+        launcherFilter
+      );
+    });
+
+  const monthTransactions = [
+    ...filteredTransactions,
   ]
     .sort(
       (a, b) =>
@@ -344,8 +359,7 @@ export default function MobileDashboard() {
         new Date(
           a.date || 0
         ).getTime()
-    )
-    .slice(0, 5);
+    );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 py-6 flex flex-col gap-5">
@@ -375,13 +389,26 @@ export default function MobileDashboard() {
         </div>
       </div>
 
-      {/* SALDO */}
+      {/* CARTAO NUBANK */}
       <div className="bg-purple-600 p-5 rounded-2xl">
 
         <div className="flex justify-between items-center">
 
-          <p className="text-sm opacity-80">
-            Saldo do mês
+          <p
+            className="text-sm opacity-80"
+            onClick={() => {
+              if (cartaoAccount) {
+                setDetailsAccount(
+                  cartaoAccount
+                );
+              }
+            }}
+          >
+            {cartaoAccount
+              ? formatAccountNameWithDueDay(
+                  cartaoAccount
+                )
+              : "Cartão de Cred Nubank"}
           </p>
 
           <button
@@ -401,54 +428,51 @@ export default function MobileDashboard() {
         </div>
 
         <h1 className="text-3xl font-bold mt-2">
-          {renderValue(saldo)}
+          {renderValue(cartao)}
         </h1>
 
       </div>
 
-      {/* CARTÃO */}
+      {/* ULTIMOS LANCAMENTOS */}
       <div className="bg-zinc-900 p-4 rounded-2xl">
 
-        <p
-          className="text-sm text-zinc-400"
-          onClick={() => {
-            if (cartaoAccount) {
-              setDetailsAccount(
-                cartaoAccount
-              );
-            }
-          }}
-        >
-          {cartaoAccount
-            ? formatAccountNameWithDueDay(
-                cartaoAccount
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <p className="text-sm text-zinc-400">
+            Últimos lançamentos
+          </p>
+
+          <select
+            value={launcherFilter}
+            onChange={(e) =>
+              setLauncherFilter(
+                e.target
+                  .value as LauncherFilter
               )
-            : "Cartão Nubank"}
-        </p>
+            }
+            className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-200 outline-none"
+          >
+            <option value="matheus">
+              Matheus
+            </option>
+            <option value="giovana">
+              Giovana
+            </option>
+            <option value="all">
+              Todos
+            </option>
+          </select>
+        </div>
 
-        <h2 className="text-xl font-bold text-red-400 mt-1">
-          {renderValue(cartao)}
-        </h2>
-
-      </div>
-
-      {/* ÚLTIMOS LANÇAMENTOS */}
-      <div className="bg-zinc-900 p-4 rounded-2xl">
-
-        <p className="text-sm text-zinc-400 mb-3">
-          Últimos lançamentos
-        </p>
-
-        {lastTransactions.length ===
+        {monthTransactions.length ===
           0 && (
           <p className="text-zinc-500 text-sm">
             Nenhum lançamento ainda
           </p>
         )}
 
-        <div className="flex flex-col gap-2">
+        <div className="max-h-[52vh] overflow-y-auto pr-1 flex flex-col gap-2">
 
-          {lastTransactions.map(
+          {monthTransactions.map(
             (t) => (
               <div
                 key={t.id}

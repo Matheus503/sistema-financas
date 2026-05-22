@@ -1,11 +1,42 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { loginWithGoogle, auth } from "../lib/auth";
+import { firebaseConfig } from "../lib/firebase";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const handleLogin = async () => {
+    setLoginError("");
+    setIsLoggingIn(true);
+
+    try {
+      await loginWithGoogle();
+    } catch (error: unknown) {
+      const code =
+        error instanceof Error && "code" in error
+          ? String(error.code)
+          : "";
+
+      const message =
+        code === "auth/unauthorized-domain"
+          ? `Este endereço local não está autorizado no Firebase do projeto ${firebaseConfig.projectId}. Confira os domínios autorizados do authDomain ${firebaseConfig.authDomain}.`
+          : code === "auth/popup-blocked"
+            ? "O navegador bloqueou a janela de login do Google. Vou tentar redirecionar para o login."
+            : "Não foi possível abrir o login do Google. Tente novamente.";
+
+      setLoginError(message);
+      toast.error(message);
+      console.error("Erro ao fazer login:", error);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
 useEffect(() => {
   const unsub = auth.onAuthStateChanged((user) => {
@@ -43,11 +74,18 @@ useEffect(() => {
         </p>
 
         <button
-          onClick={loginWithGoogle}
-          className="w-full bg-purple-600 hover:bg-purple-700 transition px-4 py-2 rounded-xl font-semibold"
+          onClick={handleLogin}
+          disabled={isLoggingIn}
+          className="w-full bg-purple-600 hover:bg-purple-700 transition px-4 py-2 rounded-xl font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Entrar com Google
+          {isLoggingIn ? "Abrindo Google..." : "Entrar com Google"}
         </button>
+
+        {loginError && (
+          <p className="mt-4 text-sm text-red-300 text-center">
+            {loginError}
+          </p>
+        )}
 
       </div>
 
