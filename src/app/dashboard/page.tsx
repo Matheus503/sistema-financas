@@ -127,6 +127,16 @@ export default function DashboardPage() {
     });
   };
 
+  const formatCurrencyTyping = (value: string) => {
+    const numbers = value.replace(/\D/g, "");
+    const amount = Number(numbers) / 100;
+
+    return amount.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
   const getInitials = (email: string) => {
     if (!email) return "?";
     const prefix = email.split("@")[0];
@@ -557,18 +567,20 @@ export default function DashboardPage() {
             <h2 className="mb-3 text-lg font-bold">Editar valor</h2>
 
             <input
+              type="tel"
+              inputMode="decimal"
               value={editValue}
               onChange={(e) =>
-                setEditValue(e.target.value.replace(/[^\d.,]/g, ""))
+                setEditValue(formatCurrencyTyping(e.target.value))
               }
               className="w-full p-2 bg-zinc-800 rounded mb-3"
               placeholder="Novo valor"
             />
 
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-2">
               <button
                 onClick={saveEdit}
-                className="bg-green-600 px-4 py-2 rounded"
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Salvar
@@ -576,7 +588,7 @@ export default function DashboardPage() {
 
               <button
                 onClick={() => setShowEdit(false)}
-                className="bg-red-600 px-4 py-2 rounded"
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Cancelar
@@ -599,18 +611,20 @@ export default function DashboardPage() {
             </p>
 
             <input
+              type="tel"
+              inputMode="decimal"
               value={expectedValue}
               onChange={(e) =>
-                setExpectedValue(e.target.value.replace(/[^\d.,]/g, ""))
+                setExpectedValue(formatCurrencyTyping(e.target.value))
               }
               className="w-full p-2 bg-zinc-800 rounded mb-3"
               placeholder="Valor previsto"
             />
 
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-2">
               <button
                 onClick={saveExpectedEdit}
-                className="bg-green-600 px-4 py-2 rounded"
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Salvar
@@ -622,7 +636,7 @@ export default function DashboardPage() {
                   setExpectedAccount(null);
                   setExpectedValue("");
                 }}
-                className="bg-red-600 px-4 py-2 rounded"
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Cancelar
@@ -640,10 +654,10 @@ export default function DashboardPage() {
               Deseja realmente excluir?
             </h2>
 
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-2">
               <button
                 onClick={confirmDelete}
-                className="bg-red-600 px-4 py-2 rounded"
+                className="bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Sim
@@ -654,7 +668,7 @@ export default function DashboardPage() {
                   setShowDeleteModal(false);
                   setAccountToDelete(null);
                 }}
-                className="bg-gray-600 px-4 py-2 rounded"
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Não
@@ -676,10 +690,10 @@ export default function DashboardPage() {
               Deseja realmente criar um novo mes?
             </p>
 
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-2">
               <button
                 onClick={confirmCreateNext}
-                className="bg-green-600 px-4 py-2 rounded"
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Sim
@@ -687,7 +701,7 @@ export default function DashboardPage() {
 
               <button
                 onClick={() => setShowCreateMonthModal(false)}
-                className="bg-red-600 px-4 py-2 rounded"
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Cancelar

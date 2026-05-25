@@ -581,10 +581,10 @@ function ExtratoContent() {
               placeholder="Novo valor"
             />
 
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-2">
               <button
                 onClick={saveEdit}
-                className="bg-green-600 px-4 py-2 rounded disabled:opacity-60"
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition disabled:opacity-60"
                 disabled={saving}
                 type="button"
               >
@@ -597,7 +597,7 @@ function ExtratoContent() {
                   setEditItem(null);
                   setEditValue("");
                 }}
-                className="bg-red-600 px-4 py-2 rounded"
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Cancelar
@@ -614,10 +614,10 @@ function ExtratoContent() {
               Deseja excluir este lançamento?
             </h2>
 
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-2">
               <button
                 onClick={confirmDelete}
-                className="bg-red-600 px-4 py-2 rounded"
+                className="bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Sim
@@ -628,7 +628,7 @@ function ExtratoContent() {
                   setShowDelete(false);
                   setItemToDelete(null);
                 }}
-                className="bg-gray-600 px-4 py-2 rounded"
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
                 Não

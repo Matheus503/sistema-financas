@@ -716,7 +716,7 @@ export default function MobileDashboard() {
             <div className="flex gap-2 mt-4">
 
               <button
-                className="flex-1 bg-green-600 py-3 rounded-xl font-semibold"
+                className="flex-1 bg-purple-600 hover:bg-purple-700 py-3 rounded-xl font-semibold transition"
                 onClick={async () => {
                   if (
                     !monthId ||
@@ -755,7 +755,7 @@ export default function MobileDashboard() {
               </button>
 
               <button
-                className="flex-1 bg-red-600 py-3 rounded-xl font-semibold"
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition"
                 onClick={() => {
                   setEditTransaction(
                     null
@@ -790,7 +790,7 @@ export default function MobileDashboard() {
             <div className="flex gap-2 mt-5">
 
               <button
-                className="flex-1 bg-green-600 py-3 rounded-xl font-semibold"
+                className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition"
                 onClick={async () => {
                   if (
                     !monthId ||
@@ -821,7 +821,7 @@ export default function MobileDashboard() {
               </button>
 
               <button
-                className="flex-1 bg-red-600 py-3 rounded-xl font-semibold"
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition"
                 onClick={() =>
                   setDeleteTransactionData(
                     null

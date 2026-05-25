@@ -660,7 +660,7 @@ export default function LaunchModal({
             disabled={
               isSaving
             }
-            className="bg-green-600 px-4 py-2 rounded disabled:opacity-60 disabled:cursor-not-allowed"
+            className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
             type="button"
           >
             {isSaving
@@ -688,7 +688,7 @@ export default function LaunchModal({
             disabled={
               isSaving
             }
-            className="bg-red-600 px-4 py-2 rounded disabled:opacity-60 disabled:cursor-not-allowed"
+            className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
             type="button"
           >
             Cancelar

@@ -97,6 +97,16 @@ export default function MobileAccountTypePage({
       maximumFractionDigits: 2,
     });
 
+  const formatCurrencyTyping = (nextValue: string) => {
+    const numbers = nextValue.replace(/\D/g, "");
+    const amount = Number(numbers) / 100;
+
+    return amount.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
   const loadData = async (targetMonthId: string) => {
     const [accs, trans] = await Promise.all([
       getAccountsByMonth(targetMonthId),
@@ -355,14 +365,14 @@ export default function MobileAccountTypePage({
               inputMode="decimal"
               value={editValue}
               onChange={(event) =>
-                setEditValue(event.target.value.replace(/[^\d.,]/g, ""))
+                setEditValue(formatCurrencyTyping(event.target.value))
               }
               className="w-full bg-zinc-800 rounded-xl p-3 outline-none"
             />
 
             <div className="flex gap-2 mt-4">
               <button
-                className="flex-1 bg-green-600 py-3 rounded-xl font-semibold"
+                className="flex-1 bg-purple-600 hover:bg-purple-700 py-3 rounded-xl font-semibold transition"
                 onClick={saveEdit}
                 type="button"
               >
@@ -370,7 +380,7 @@ export default function MobileAccountTypePage({
               </button>
 
               <button
-                className="flex-1 bg-red-600 py-3 rounded-xl font-semibold"
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition"
                 onClick={() => {
                   setEditAccount(null);
                   setEditValue("");
@@ -395,7 +405,7 @@ export default function MobileAccountTypePage({
 
             <div className="flex gap-2 mt-5">
               <button
-                className="flex-1 bg-red-600 py-3 rounded-xl font-semibold"
+                className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition"
                 onClick={confirmDelete}
                 type="button"
               >
@@ -403,7 +413,7 @@ export default function MobileAccountTypePage({
               </button>
 
               <button
-                className="flex-1 bg-zinc-700 py-3 rounded-xl font-semibold"
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition"
                 onClick={() => setAccountToDelete(null)}
                 type="button"
               >

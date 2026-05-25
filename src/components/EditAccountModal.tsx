@@ -63,6 +63,16 @@ function EditAccountForm({
     return Number(v.replace(/\./g, "").replace(",", "."));
   };
 
+  const formatCurrencyTyping = (nextValue: string) => {
+    const numbers = nextValue.replace(/\D/g, "");
+    const amount = Number(numbers) / 100;
+
+    return amount.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
   const handleDueDayChange = (nextValue: string) => {
     if (!nextValue) {
       setDueDay("");
@@ -138,8 +148,10 @@ function EditAccountForm({
         />
 
         <input
+          type="tel"
+          inputMode="decimal"
           value={value}
-          onChange={(e) => setValue(e.target.value.replace(/[^\d.,]/g, ""))}
+          onChange={(e) => setValue(formatCurrencyTyping(e.target.value))}
           placeholder="Valor"
           className="w-full p-2 bg-zinc-800 rounded mb-3"
         />
@@ -155,10 +167,10 @@ function EditAccountForm({
           className="w-full p-2 bg-zinc-800 rounded mb-3"
         />
 
-        <div className="flex justify-between">
+        <div className="flex justify-between gap-2">
           <button
             onClick={handleSave}
-            className="bg-green-600 px-4 py-2 rounded"
+            className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
             type="button"
           >
             Salvar
@@ -166,7 +178,7 @@ function EditAccountForm({
 
           <button
             onClick={handleClose}
-            className="bg-red-600 px-4 py-2 rounded"
+            className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
             type="button"
           >
             Cancelar

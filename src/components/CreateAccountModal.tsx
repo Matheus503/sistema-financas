@@ -31,6 +31,16 @@ export default function CreateAccountModal({
     return Number(v.replace(/\./g, "").replace(",", "."));
   };
 
+  const formatCurrencyInput = (nextValue: string) => {
+    const numbers = nextValue.replace(/\D/g, "");
+    const amount = Number(numbers) / 100;
+
+    return amount.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
   const handleDueDayChange = (nextValue: string) => {
     if (!nextValue) {
       setDueDay("");
@@ -101,8 +111,10 @@ export default function CreateAccountModal({
         />
 
         <input
+          type="tel"
+          inputMode="decimal"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => setValue(formatCurrencyInput(e.target.value))}
           placeholder="Valor inicial (ex: 100,00)"
           className="w-full p-2 bg-zinc-800 rounded mb-3"
         />
@@ -118,10 +130,10 @@ export default function CreateAccountModal({
           className="w-full p-2 bg-zinc-800 rounded mb-3"
         />
 
-        <div className="flex justify-between">
+        <div className="flex justify-between gap-2">
           <button
             onClick={handleCreate}
-            className="bg-green-600 px-4 py-2 rounded"
+            className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
             type="button"
           >
             Criar
@@ -134,7 +146,7 @@ export default function CreateAccountModal({
               setDueDay("");
               onClose();
             }}
-            className="bg-red-600 px-4 py-2 rounded"
+            className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
             type="button"
           >
             Cancelar
