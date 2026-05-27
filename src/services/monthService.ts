@@ -17,6 +17,7 @@ const defaultAccounts = [
 
   { name: "Cartão Cred Nubank (19)", type: "VARIABLE" },
   { name: "Energia RP (13)", type: "VARIABLE" },
+  { name: "PIX", type: "VARIABLE" },
 ];
 
 type MonthDoc = {
@@ -51,6 +52,10 @@ const getValidDueDay = (dia_vencimento: unknown) => {
   return Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31
     ? dueDay
     : undefined;
+};
+
+const isPixAccount = (name: unknown) => {
+  return String(name || "").trim().toLowerCase() === "pix";
 };
 
 export const createMonth = async (
@@ -107,6 +112,28 @@ export const createMonth = async (
         if (a.data.type === b.data.type) return aOrder - bOrder;
         return a.index - b.index;
       });
+
+    if (!orderedAccounts.some((item) => isPixAccount(item.data.name))) {
+      const maxVariableOrder = orderedAccounts
+        .filter((item) => item.data.type === "VARIABLE")
+        .reduce((maxOrder, item) => {
+          const order = Number.isFinite(Number(item.data.order))
+            ? Number(item.data.order)
+            : item.index;
+
+          return Math.max(maxOrder, order);
+        }, -1);
+
+      orderedAccounts.push({
+        index: orderedAccounts.length,
+        data: {
+          name: "PIX",
+          type: "VARIABLE",
+          value: 0,
+          order: maxVariableOrder + 1,
+        },
+      });
+    }
 
     for (const item of orderedAccounts) {
       const data = item.data;

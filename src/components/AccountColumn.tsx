@@ -17,6 +17,7 @@ type Props = {
   onEditDetails: (acc: FinanceAccount) => void;
   onAdd: (type: string) => void;
   onOpenStatement?: () => void;
+  onOpenPixHistory?: (acc: FinanceAccount) => void;
   onEditExpectedValue?: (acc: FinanceAccount) => void;
   onReorder?: (type: string, draggedId: string, targetId: string) => void;
 };
@@ -52,6 +53,7 @@ export default function AccountColumn({
   onEditDetails,
   onAdd,
   onOpenStatement,
+  onOpenPixHistory,
   onEditExpectedValue,
 }: Props) {
   const columnAccounts = useMemo(() => {
@@ -124,6 +126,7 @@ export default function AccountColumn({
         {columnAccounts
           .map((acc) => {
             const isNubank = acc.name?.includes("Nubank");
+            const isPix = String(acc.name || "").trim().toLowerCase() === "pix";
 
             return (
               <div
@@ -174,7 +177,9 @@ export default function AccountColumn({
                     </div>
                   ) : (
                     <span
-                      onClick={() => onEdit(acc)}
+                      onClick={() =>
+                        isPix ? onOpenPixHistory?.(acc) : onEdit(acc)
+                      }
                       className="cursor-pointer hover:underline"
                     >
                       {formatMoney(getAccountValue(acc))}

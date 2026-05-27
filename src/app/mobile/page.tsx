@@ -324,6 +324,14 @@ export default function MobileDashboard() {
       acc?.value || 0
     );
 
+    if (
+      !String(acc?.name || "").includes(
+        "Nubank"
+      )
+    ) {
+      return baseValue;
+    }
+
     const totalTransactions =
       transactions
         .filter(
@@ -816,6 +824,8 @@ export default function MobileDashboard() {
                     null
                   );
                 }}
+                type="button"
+                autoFocus
               >
                 Confirmar
               </button>
@@ -827,6 +837,7 @@ export default function MobileDashboard() {
                     null
                   )
                 }
+                type="button"
               >
                 Cancelar
               </button>

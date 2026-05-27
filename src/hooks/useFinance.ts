@@ -33,6 +33,10 @@ export function useFinance() {
 const getAccountValue = (acc: any) => {
   const baseValue = Number(acc?.value || 0);
 
+  if (!String(acc?.name || "").includes("Nubank")) {
+    return baseValue;
+  }
+
   const totalTransactions = transactions
     .filter((t) => t.accountId === acc.id)
     .reduce((sum, t) => sum + Number(t.value || 0), 0);
@@ -50,7 +54,7 @@ const getAccountValue = (acc: any) => {
       .reduce((sum, acc) => sum + getAccountValue(acc), 0);
 
     return credits - expenses;
-  }, [accounts]);
+  }, [accounts, transactions]);
 
   return {
     accounts,

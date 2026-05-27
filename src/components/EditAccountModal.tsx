@@ -137,7 +137,13 @@ function EditAccountForm({
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-      <div className="bg-zinc-900 p-6 rounded-xl w-80 border border-zinc-800">
+      <form
+        className="bg-zinc-900 p-6 rounded-xl w-80 border border-zinc-800"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleSave();
+        }}
+      >
         <h2 className="mb-3 text-lg font-bold">Editar conta</h2>
 
         <input
@@ -169,9 +175,8 @@ function EditAccountForm({
 
         <div className="flex justify-between gap-2">
           <button
-            onClick={handleSave}
             className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
-            type="button"
+            type="submit"
           >
             Salvar
           </button>
@@ -184,7 +189,7 @@ function EditAccountForm({
             Cancelar
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

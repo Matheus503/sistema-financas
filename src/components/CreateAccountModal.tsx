@@ -98,7 +98,13 @@ export default function CreateAccountModal({
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
-      <div className="bg-zinc-900 p-6 rounded-xl w-80">
+      <form
+        className="bg-zinc-900 p-6 rounded-xl w-80"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleCreate();
+        }}
+      >
         <h2 className="mb-3 text-lg font-bold">Nova Conta</h2>
 
         <div className="text-sm text-zinc-400 mb-3">Tipo: {type}</div>
@@ -132,9 +138,8 @@ export default function CreateAccountModal({
 
         <div className="flex justify-between gap-2">
           <button
-            onClick={handleCreate}
             className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
-            type="button"
+            type="submit"
           >
             Criar
           </button>
@@ -152,7 +157,7 @@ export default function CreateAccountModal({
             Cancelar
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

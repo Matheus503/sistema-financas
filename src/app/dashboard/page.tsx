@@ -3,9 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { auth } from "../../lib/auth";
 import { createMonth, getAllMonths } from "../../services/monthService";
+import {
+  deleteTransaction,
+  updateTransaction,
+} from "../../services/transactionService";
 import {
   deleteAccount,
   updateAccountsOrder,
@@ -94,12 +99,18 @@ export default function DashboardPage() {
   const [showExpectedEdit, setShowExpectedEdit] = useState(false);
   const [expectedAccount, setExpectedAccount] = useState<any>(null);
   const [expectedValue, setExpectedValue] = useState("");
+  const [pixAccount, setPixAccount] = useState<FinanceAccount | null>(null);
+  const [pixEditingId, setPixEditingId] = useState<string | null>(null);
+  const [pixEditValue, setPixEditValue] = useState("");
+  const [pixDeletingTransaction, setPixDeletingTransaction] =
+    useState<any>(null);
 
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const {
     accounts,
     setAccounts,
+    transactions,
     setTransactions,
     loadData,
     handleTogglePaid,
@@ -195,6 +206,10 @@ export default function DashboardPage() {
     setShowExpectedEdit(false);
     setExpectedAccount(null);
     setExpectedValue("");
+    setPixAccount(null);
+    setPixEditingId(null);
+    setPixEditValue("");
+    setPixDeletingTransaction(null);
     setShowUserMenu(false);
     setShowValues(false);
   };
@@ -299,6 +314,10 @@ export default function DashboardPage() {
 
   const openEdit = (acc: any) => {
     if (acc.name?.includes("Nubank")) return;
+    if (String(acc.name || "").trim().toLowerCase() === "pix") {
+      setPixAccount(acc);
+      return;
+    }
 
     setEditAccount(acc);
     setEditValue(formatCurrencyInput(Number(acc.value || 0)));
@@ -343,6 +362,112 @@ export default function DashboardPage() {
     setExpectedAccount(null);
     setExpectedValue("");
     toast.success("Valor previsto editado com sucesso.");
+  };
+
+  const pixTransactions = transactions.filter(
+    (transaction) => transaction.accountId === pixAccount?.id
+  );
+  const pixEditingTransaction = pixTransactions.find(
+    (transaction) => transaction.id === pixEditingId
+  );
+
+  const formatTransactionDate = (value: string) => {
+    if (!value) return "-";
+
+    const [year, month, day] = value.split("-");
+    if (!year || !month || !day) return value;
+
+    return `${day}/${month}/${year}`;
+  };
+
+  const getTransactionLauncher = (transaction: any) => {
+    return (
+      transaction.launcherName ||
+      transaction.userName ||
+      transaction.userEmail ||
+      "Sem informacao"
+    );
+  };
+
+  const startPixEdit = (transaction: any) => {
+    setPixEditingId(transaction.id);
+    setPixEditValue(formatCurrencyInput(Number(transaction.value || 0)));
+  };
+
+  const cancelPixEdit = () => {
+    setPixEditingId(null);
+    setPixEditValue("");
+  };
+
+  const closePixHistory = () => {
+    setPixAccount(null);
+    cancelPixEdit();
+    setPixDeletingTransaction(null);
+  };
+
+  const savePixTransactionValue = async () => {
+    if (!monthId || !pixAccount || !pixEditingTransaction) return;
+
+    const previousValue = Number(pixEditingTransaction.value || 0);
+    const nextValue = parseCurrency(pixEditValue);
+    const delta = nextValue - previousValue;
+    const nextAccountValue = Number(pixAccount.value || 0) + delta;
+
+    await updateTransaction(monthId, pixEditingTransaction.id, {
+      value: nextValue,
+    });
+
+    await updateAccountValue(monthId, pixAccount.id, nextAccountValue);
+
+    setTransactions((prev) =>
+      prev.map((item) =>
+        item.id === pixEditingTransaction.id
+          ? { ...item, value: nextValue }
+          : item
+      )
+    );
+
+    setAccounts((prev) =>
+      prev.map((account) =>
+        account.id === pixAccount.id
+          ? { ...account, value: nextAccountValue }
+          : account
+      )
+    );
+
+    setPixAccount((prev) =>
+      prev ? { ...prev, value: nextAccountValue } : prev
+    );
+    cancelPixEdit();
+    toast.success("Valor do PIX editado com sucesso.");
+  };
+
+  const confirmDeletePixTransaction = async () => {
+    if (!monthId || !pixAccount || !pixDeletingTransaction) return;
+
+    const deletedValue = Number(pixDeletingTransaction.value || 0);
+    const nextAccountValue = Number(pixAccount.value || 0) - deletedValue;
+
+    await deleteTransaction(monthId, pixDeletingTransaction.id);
+    await updateAccountValue(monthId, pixAccount.id, nextAccountValue);
+
+    setTransactions((prev) =>
+      prev.filter((item) => item.id !== pixDeletingTransaction.id)
+    );
+
+    setAccounts((prev) =>
+      prev.map((account) =>
+        account.id === pixAccount.id
+          ? { ...account, value: nextAccountValue }
+          : account
+      )
+    );
+
+    setPixAccount((prev) =>
+      prev ? { ...prev, value: nextAccountValue } : prev
+    );
+    setPixDeletingTransaction(null);
+    toast.success("PIX excluido com sucesso.");
   };
 
   const handleReorderAccounts = async (
@@ -555,6 +680,7 @@ export default function DashboardPage() {
           onEditDetails={setDetailsAccount}
           onAdd={(type) => setCreateModal({ open: true, type })}
           onOpenStatement={() => router.push(extratoHref)}
+          onOpenPixHistory={setPixAccount}
           onEditExpectedValue={openExpectedEdit}
           onReorder={handleReorderAccounts}
         />
@@ -563,7 +689,13 @@ export default function DashboardPage() {
       {/* MODAL EDITAR */}
       {showEdit && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
-          <div className="bg-zinc-900 p-6 rounded-xl w-80">
+          <form
+            className="bg-zinc-900 p-6 rounded-xl w-80"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveEdit();
+            }}
+          >
             <h2 className="mb-3 text-lg font-bold">Editar valor</h2>
 
             <input
@@ -579,9 +711,8 @@ export default function DashboardPage() {
 
             <div className="flex justify-between gap-2">
               <button
-                onClick={saveEdit}
                 className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
-                type="button"
+                type="submit"
               >
                 Salvar
               </button>
@@ -594,14 +725,20 @@ export default function DashboardPage() {
                 Cancelar
               </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
       {/* MODAL EDITAR VALOR PREVISTO */}
       {showExpectedEdit && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 p-6 rounded-xl w-80 border border-zinc-800">
+          <form
+            className="bg-zinc-900 p-6 rounded-xl w-80 border border-zinc-800"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveExpectedEdit();
+            }}
+          >
             <h2 className="mb-3 text-lg font-bold">
               Editar valor previsto
             </h2>
@@ -623,9 +760,8 @@ export default function DashboardPage() {
 
             <div className="flex justify-between gap-2">
               <button
-                onClick={saveExpectedEdit}
                 className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
-                type="button"
+                type="submit"
               >
                 Salvar
               </button>
@@ -642,7 +778,7 @@ export default function DashboardPage() {
                 Cancelar
               </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
@@ -659,6 +795,7 @@ export default function DashboardPage() {
                 onClick={confirmDelete}
                 className="bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 px-4 py-2 rounded font-semibold transition"
                 type="button"
+                autoFocus
               >
                 Sim
               </button>
@@ -695,6 +832,7 @@ export default function DashboardPage() {
                 onClick={confirmCreateNext}
                 className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
                 type="button"
+                autoFocus
               >
                 Sim
               </button>
@@ -712,6 +850,157 @@ export default function DashboardPage() {
       )}
 
       {/* MODAL LANÇAMENTO */}
+      {/* MODAL HISTORICO PIX */}
+      {pixAccount && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-zinc-900 p-6 rounded-xl w-full max-w-2xl border border-zinc-800">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <h2 className="text-lg font-bold">Historico PIX</h2>
+                <p className="text-sm text-zinc-400">
+                  Total: {formatMoney(Number(pixAccount.value || 0))}
+                </p>
+              </div>
+
+              <button
+                onClick={closePixHistory}
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
+                type="button"
+              >
+                Fechar
+              </button>
+            </div>
+
+            {pixTransactions.length === 0 ? (
+              <div className="bg-zinc-800/70 rounded-lg p-4 text-zinc-400">
+                Nenhum lancamento PIX encontrado neste mes.
+              </div>
+            ) : (
+              <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
+                {pixTransactions.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className="bg-zinc-800/70 border border-zinc-700 rounded-lg px-4 py-3"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-[110px_1fr_auto_auto] gap-3 items-center">
+                      <div className="font-semibold">
+                        {formatTransactionDate(transaction.date)}
+                      </div>
+
+                      <div className="text-zinc-300 break-words">
+                        <span className="font-semibold text-zinc-200">
+                          {getTransactionLauncher(transaction)}
+                        </span>
+                        {` - ${transaction.note || "-"}`}
+                      </div>
+
+                      <button
+                        onClick={() => startPixEdit(transaction)}
+                        className="font-bold hover:underline md:text-right"
+                        type="button"
+                      >
+                        {formatMoney(Number(transaction.value || 0))}
+                      </button>
+
+                      <button
+                        onClick={() => setPixDeletingTransaction(transaction)}
+                        className="p-1 text-zinc-500 hover:text-red-300 transition justify-self-start md:justify-self-end"
+                        type="button"
+                        title="Excluir PIX"
+                        aria-label="Excluir PIX"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR PIX */}
+      {pixEditingTransaction && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <form
+            className="bg-zinc-900 p-6 rounded-xl w-80 border border-zinc-800"
+            onSubmit={(event) => {
+              event.preventDefault();
+              savePixTransactionValue();
+            }}
+          >
+            <h2 className="mb-3 text-lg font-bold">Editar PIX</h2>
+
+            <p className="text-sm text-zinc-400 mb-3">
+              {formatTransactionDate(pixEditingTransaction.date)} -{" "}
+              {getTransactionLauncher(pixEditingTransaction)}
+            </p>
+
+            <input
+              type="tel"
+              inputMode="decimal"
+              value={pixEditValue}
+              onChange={(event) =>
+                setPixEditValue(formatCurrencyTyping(event.target.value))
+              }
+              className="w-full p-2 bg-zinc-800 rounded mb-3"
+              placeholder="Novo valor"
+              autoFocus
+            />
+
+            <div className="flex justify-between gap-2">
+              <button
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
+                type="submit"
+              >
+                Salvar
+              </button>
+
+              <button
+                onClick={cancelPixEdit}
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL EXCLUIR PIX */}
+      {pixDeletingTransaction && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <div className="bg-zinc-900 p-6 rounded-xl w-80 text-center border border-zinc-800">
+            <h2 className="mb-3 text-lg font-bold">Excluir PIX?</h2>
+
+            <p className="text-sm text-zinc-400 mb-5">
+              Deseja realmente excluir este PIX?
+            </p>
+
+            <div className="flex justify-between gap-2">
+              <button
+                onClick={confirmDeletePixTransaction}
+                className="bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 px-4 py-2 rounded font-semibold transition"
+                type="button"
+                autoFocus
+              >
+                Sim
+              </button>
+
+              <button
+                onClick={() => setPixDeletingTransaction(null)}
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <LaunchModal
         open={showForm}
         onClose={() => setShowForm(false)}

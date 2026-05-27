@@ -521,7 +521,13 @@ export default function LaunchModal({
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
 
-      <div className="bg-zinc-900 p-6 rounded-xl w-80 space-y-3 border border-zinc-800">
+      <form
+        className="bg-zinc-900 p-6 rounded-xl w-80 space-y-3 border border-zinc-800"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleSave();
+        }}
+      >
 
         <h2 className="text-lg font-bold">
           Novo Lançamento
@@ -654,14 +660,11 @@ export default function LaunchModal({
         <div className="flex justify-between pt-2">
 
           <button
-            onClick={
-              handleSave
-            }
             disabled={
               isSaving
             }
             className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
-            type="button"
+            type="submit"
           >
             {isSaving
               ? "Salvando..."
@@ -695,7 +698,7 @@ export default function LaunchModal({
           </button>
 
         </div>
-      </div>
+      </form>
     </div>
   );
 }
