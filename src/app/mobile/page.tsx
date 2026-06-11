@@ -22,6 +22,7 @@ import {
 import {
   formatAccountNameWithDueDay,
   getAccountsByMonth,
+  isNubankCreditCardAccount,
 } from "../../services/accountService";
 
 import type { FinanceAccount } from "../../services/accountService";
@@ -514,7 +515,12 @@ export default function MobileDashboard() {
           <p
             className="text-sm opacity-80"
             onClick={() => {
-              if (cartaoAccount) {
+              if (
+                cartaoAccount &&
+                !isNubankCreditCardAccount(
+                  cartaoAccount
+                )
+              ) {
                 setDetailsAccount(
                   cartaoAccount
                 );

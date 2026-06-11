@@ -31,6 +31,32 @@ export const formatAccountNameWithDueDay = (
   return `${account.name} - ${account.dia_vencimento}`;
 };
 
+const normalizeAccountName = (name: string) =>
+  name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+export const isNubankCreditCardAccount = (
+  account: Pick<FinanceAccount, "name"> | null | undefined
+) => {
+  const normalizedName = normalizeAccountName(String(account?.name || ""));
+
+  return (
+    normalizedName.includes("nubank") &&
+    normalizedName.includes("cartao") &&
+    (normalizedName.includes("credito") || normalizedName.includes("cred"))
+  );
+};
+
+export const isPixAccount = (
+  account: Pick<FinanceAccount, "name"> | null | undefined
+) => normalizeAccountName(String(account?.name || "").trim()) === "pix";
+
+export const isCalculatedAccount = (
+  account: Pick<FinanceAccount, "name"> | null | undefined
+) => isNubankCreditCardAccount(account) || isPixAccount(account);
+
 type CreateAccountData = Omit<FinanceAccount, "id">;
 type UpdateAccountData = {
   name: string;

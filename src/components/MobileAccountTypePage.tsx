@@ -11,6 +11,8 @@ import {
   deleteAccount,
   formatAccountNameWithDueDay,
   getAccountsByMonth,
+  isCalculatedAccount,
+  isPixAccount,
   toggleAccountPaid,
   updateAccountValue,
 } from "../services/accountService";
@@ -195,9 +197,6 @@ export default function MobileAccountTypePage({
     (transaction) => transaction.id === pixEditingId
   );
 
-  const isPixAccount = (account: FinanceAccount) =>
-    String(account.name || "").trim().toLowerCase() === "pix";
-
   const formatTransactionDate = (value: string) => {
     if (!value) return "-";
 
@@ -251,6 +250,8 @@ export default function MobileAccountTypePage({
       setPixAccount(account);
       return;
     }
+
+    if (isCalculatedAccount(account)) return;
 
     setEditAccount(account);
     setEditValue(formatCurrencyInput(getAccountValue(account)));
@@ -444,6 +445,7 @@ export default function MobileAccountTypePage({
                 <button
                   onClick={(event) => {
                     event.stopPropagation();
+                    if (isCalculatedAccount(account)) return;
                     setDetailsAccount(account);
                   }}
                   type="button"
@@ -464,7 +466,7 @@ export default function MobileAccountTypePage({
                     {formatMoney(getAccountValue(account))}
                   </button>
 
-                  {!isPixAccount(account) && (
+                  {!isCalculatedAccount(account) && (
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
@@ -486,18 +488,18 @@ export default function MobileAccountTypePage({
 
       {pixAccount && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-          <div className="bg-zinc-900 p-5 rounded-2xl w-full max-w-sm border border-zinc-800">
-            <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="bg-zinc-900 p-4 rounded-2xl w-full max-w-sm border border-zinc-800">
+            <div className="flex items-start justify-between gap-4 mb-3">
               <div>
-                <h2 className="text-lg font-bold">Historico PIX</h2>
-                <p className="text-sm text-zinc-400">
+                <h2 className="text-sm text-zinc-400">Historico PIX</h2>
+                <p className="text-xs text-zinc-500 mt-1">
                   Total: {formatMoney(Number(pixAccount.value || 0))}
                 </p>
               </div>
 
               <button
                 onClick={closePixHistory}
-                className="bg-zinc-700 hover:bg-zinc-600 px-3 py-2 rounded-xl font-semibold transition"
+                className="bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
                 type="button"
               >
                 Fechar
@@ -509,30 +511,29 @@ export default function MobileAccountTypePage({
                 Nenhum lancamento PIX encontrado neste mes.
               </div>
             ) : (
-              <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
+              <div className="max-h-[60vh] overflow-y-auto pr-1 flex flex-col gap-2">
                 {pixTransactions.map((transaction) => (
                   <div
                     key={transaction.id}
-                    className="bg-zinc-800/70 border border-zinc-700 rounded-xl p-3"
+                    className="border-b border-zinc-800 pb-2"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-semibold">
-                          {formatTransactionDate(transaction.date)}
-                        </div>
+                    <div className="flex justify-between text-sm font-medium">
+                      <span>
+                        {transaction.category || "Sem categoria"} -{" "}
+                        {formatTransactionDate(transaction.date)}
+                      </span>
+                    </div>
 
-                        <div className="text-sm text-zinc-300 break-words">
-                          <span className="font-semibold text-zinc-200">
-                            {getTransactionLauncher(transaction)}
-                          </span>
-                          {` - ${transaction.note || "-"}`}
-                        </div>
-                      </div>
+                    <div className="flex justify-between items-center gap-3 text-xs mt-1">
+                      <span className="min-w-0 text-zinc-500 break-words">
+                        {getTransactionLauncher(transaction)}
+                        {transaction.note ? ` - ${transaction.note}` : ""}
+                      </span>
 
                       <div className="flex shrink-0 items-center gap-2">
                         <button
                           onClick={() => startPixEdit(transaction)}
-                          className="font-bold text-red-400"
+                          className="font-semibold text-sm text-red-400"
                           type="button"
                         >
                           {formatMoney(Number(transaction.value || 0))}

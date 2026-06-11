@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import type { FinanceAccount } from "../services/accountService";
-import { updateAccountDetails } from "../services/accountService";
+import {
+  isCalculatedAccount,
+  updateAccountDetails,
+} from "../services/accountService";
 
 type Props = {
   open: boolean;
@@ -21,6 +24,7 @@ export default function EditAccountModal({
   setAccounts,
 }: Props) {
   if (!open || !account) return null;
+  if (isCalculatedAccount(account)) return null;
 
   return (
     <EditAccountForm

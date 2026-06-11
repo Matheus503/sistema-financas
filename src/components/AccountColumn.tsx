@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { formatAccountNameWithDueDay } from "../services/accountService";
+import {
+  formatAccountNameWithDueDay,
+  isCalculatedAccount,
+  isPixAccount,
+} from "../services/accountService";
 import type { FinanceAccount } from "../services/accountService";
 
 type Props = {
@@ -126,7 +130,8 @@ export default function AccountColumn({
         {columnAccounts
           .map((acc) => {
             const isNubank = acc.name?.includes("Nubank");
-            const isPix = String(acc.name || "").trim().toLowerCase() === "pix";
+            const isPix = isPixAccount(acc);
+            const isProtectedAccount = isCalculatedAccount(acc);
 
             return (
               <div
@@ -143,9 +148,14 @@ export default function AccountColumn({
                 `}
               >
                 <span
-                  className="pr-2 cursor-pointer hover:underline"
+                  className={`pr-2 ${
+                    isProtectedAccount
+                      ? "cursor-default"
+                      : "cursor-pointer hover:underline"
+                  }`}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (isProtectedAccount) return;
                     onEditDetails(acc);
                   }}
                 >
@@ -177,16 +187,20 @@ export default function AccountColumn({
                     </div>
                   ) : (
                     <span
-                      onClick={() =>
-                        isPix ? onOpenPixHistory?.(acc) : onEdit(acc)
-                      }
+                      onClick={() => {
+                        if (isPix) {
+                          onOpenPixHistory?.(acc);
+                          return;
+                        }
+                        onEdit(acc);
+                      }}
                       className="cursor-pointer hover:underline"
                     >
                       {formatMoney(getAccountValue(acc))}
                     </span>
                   )}
 
-                  {!isNubank && (
+                  {!isProtectedAccount && (
                     <button onClick={() => onDelete(acc)} type="button">
                       🗑
                     </button>

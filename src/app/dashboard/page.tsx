@@ -13,6 +13,7 @@ import {
 } from "../../services/transactionService";
 import {
   deleteAccount,
+  isCalculatedAccount,
   updateAccountsOrder,
   updateAccountExpectedValue,
   updateAccountValue,
@@ -294,7 +295,7 @@ export default function DashboardPage() {
   };
 
   const askDelete = (acc: any) => {
-    if (acc.name?.includes("Nubank")) return;
+    if (isCalculatedAccount(acc)) return;
 
     setAccountToDelete(acc);
     setShowDeleteModal(true);
@@ -313,11 +314,7 @@ export default function DashboardPage() {
   };
 
   const openEdit = (acc: any) => {
-    if (acc.name?.includes("Nubank")) return;
-    if (String(acc.name || "").trim().toLowerCase() === "pix") {
-      setPixAccount(acc);
-      return;
-    }
+    if (isCalculatedAccount(acc)) return;
 
     setEditAccount(acc);
     setEditValue(formatCurrencyInput(Number(acc.value || 0)));
