@@ -47,6 +47,9 @@ type Props = {
   onMonthsChanged?: (
     targetMonthId: string
   ) => Promise<void>;
+  onSaved?: (
+    targetMonthId: string
+  ) => Promise<void> | void;
 };
 
 const nubankCategories = [
@@ -173,6 +176,7 @@ export default function LaunchModal({
   setAccounts,
   setTransactions,
   onMonthsChanged,
+  onSaved,
 }: Props) {
   const [value, setValue] =
     useState("");
@@ -489,6 +493,10 @@ export default function LaunchModal({
 
         setTransactions(
           trans
+        );
+
+        await onSaved?.(
+          targetMonthId
         );
 
         setValue("");

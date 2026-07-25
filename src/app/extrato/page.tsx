@@ -14,7 +14,9 @@ import {
   updateTransaction,
 } from "../../services/transactionService";
 import TransactionList from "../../components/TransactionList";
+import LaunchModal from "../../components/LaunchModal";
 import { ALLOWED_USERS } from "../../config/allowedUsers";
+import type { FinanceAccount } from "../../services/accountService";
 
 type MonthDoc = {
   id: string;
@@ -24,9 +26,9 @@ type MonthDoc = {
 
 type Transaction = {
   id: string;
-  accountId: string;
-  date: string;
-  value: number;
+  accountId?: string;
+  date?: string;
+  value?: number;
   note?: string;
   category?: string;
   userId?: string;
@@ -86,9 +88,13 @@ function ExtratoContent() {
     useState<LauncherFilter | "">("");
 
   const [allItems, setAllItems] = useState<ExtratoItem[]>([]);
+  const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
+  const [, setTransactions] = useState<Transaction[]>([]);
+  const [activeMonthId, setActiveMonthId] = useState<string | null>(null);
   const [groups, setGroups] = useState<TransactionGroup[]>([]);
   const [total, setTotal] = useState(0);
   const [monthTitle, setMonthTitle] = useState("Extrato Nubank");
+  const [showLaunchModal, setShowLaunchModal] = useState(false);
 
   const [filterDate, setFilterDate] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
@@ -200,6 +206,9 @@ function ExtratoContent() {
 
       if (!targetMonth) {
         setAllItems([]);
+        setAccounts([]);
+        setTransactions([]);
+        setActiveMonthId(null);
         setGroups([]);
         setTotal(0);
         setMonthTitle("Extrato Nubank");
@@ -219,6 +228,10 @@ function ExtratoContent() {
 
       const label = formatMonthLabel(targetMonth.month, targetMonth.year);
       const monthOrder = targetMonth.year * 100 + targetMonth.month;
+
+      setAccounts(accounts as FinanceAccount[]);
+      setTransactions(transactions);
+      setActiveMonthId(targetMonth.id);
 
       const items: ExtratoItem[] = [];
 
@@ -381,6 +394,14 @@ function ExtratoContent() {
         </div>
 
 <div className="flex gap-2">
+  <button
+    onClick={() => setShowLaunchModal(true)}
+    className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-xl shadow"
+    type="button"
+  >
+    + Lançar
+  </button>
+
   <button
     onClick={() =>
       router.push(`/extrato-total?monthId=${requestedMonthId}`)
@@ -643,6 +664,24 @@ function ExtratoContent() {
           </div>
         </div>
       )}
+
+      <LaunchModal
+        open={showLaunchModal}
+        onClose={() => setShowLaunchModal(false)}
+        monthId={activeMonthId}
+        accounts={accounts}
+        setAccounts={setAccounts}
+        setTransactions={setTransactions}
+        onSaved={async () => {
+          await loadExtrato();
+        }}
+        onMonthsChanged={async (targetMonthId) => {
+          await loadExtrato();
+          if (targetMonthId !== activeMonthId) {
+            router.push(`/extrato?monthId=${targetMonthId}`);
+          }
+        }}
+      />
     </div>
   );
 }
