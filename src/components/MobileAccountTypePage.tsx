@@ -34,6 +34,8 @@ type Props = {
   deletedMessage: string;
 };
 
+type LauncherFilter = "matheus" | "giovana" | "all";
+
 const monthName = (month: number) =>
   [
     "Jan",
@@ -85,6 +87,8 @@ export default function MobileAccountTypePage({
   const [pixAccount, setPixAccount] = useState<FinanceAccount | null>(null);
   const [pixEditingId, setPixEditingId] = useState<string | null>(null);
   const [pixEditValue, setPixEditValue] = useState("");
+  const [pixLauncherFilter, setPixLauncherFilter] =
+    useState<LauncherFilter>("matheus");
   const [pixDeletingTransaction, setPixDeletingTransaction] =
     useState<any>(null);
 
@@ -193,6 +197,18 @@ export default function MobileAccountTypePage({
   const pixTransactions = transactions.filter(
     (transaction) => transaction.accountId === pixAccount?.id
   );
+  const pixFilteredTransactions = pixTransactions.filter((transaction) => {
+    if (pixLauncherFilter === "all") return true;
+
+    const raw = `${
+      transaction.launcherName ||
+      transaction.userName ||
+      transaction.userEmail ||
+      ""
+    }`.toLowerCase();
+
+    return raw.includes(pixLauncherFilter);
+  });
   const pixEditingTransaction = pixTransactions.find(
     (transaction) => transaction.id === pixEditingId
   );
@@ -497,22 +513,36 @@ export default function MobileAccountTypePage({
                 </p>
               </div>
 
-              <button
-                onClick={closePixHistory}
-                className="bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-                type="button"
-              >
-                Fechar
-              </button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={pixLauncherFilter}
+                  onChange={(event) =>
+                    setPixLauncherFilter(event.target.value as LauncherFilter)
+                  }
+                  className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-zinc-200 outline-none"
+                >
+                  <option value="matheus">Matheus</option>
+                  <option value="giovana">Giovana</option>
+                  <option value="all">Todos</option>
+                </select>
+
+                <button
+                  onClick={closePixHistory}
+                  className="bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                  type="button"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
 
-            {pixTransactions.length === 0 ? (
+            {pixFilteredTransactions.length === 0 ? (
               <div className="bg-zinc-800/70 rounded-xl p-4 text-zinc-400 text-sm">
                 Nenhum lancamento PIX encontrado neste mes.
               </div>
             ) : (
               <div className="max-h-[60vh] overflow-y-auto pr-1 flex flex-col gap-2">
-                {pixTransactions.map((transaction) => (
+                {pixFilteredTransactions.map((transaction) => (
                   <div
                     key={transaction.id}
                     className="border-b border-zinc-800 pb-2"

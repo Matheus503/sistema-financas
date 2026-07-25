@@ -5,6 +5,7 @@ import {
   serverTimestamp,
   getDocs,
 } from "firebase/firestore";
+import { isCalculatedAccount, isPixAccount } from "./accountService";
 
 const defaultAccounts = [
   { name: "Salario (5-8)", type: "CREDIT" },
@@ -52,10 +53,6 @@ const getValidDueDay = (dia_vencimento: unknown) => {
   return Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31
     ? dueDay
     : undefined;
-};
-
-const isPixAccount = (name: unknown) => {
-  return String(name || "").trim().toLowerCase() === "pix";
 };
 
 export const createMonth = async (
@@ -113,7 +110,11 @@ export const createMonth = async (
         return a.index - b.index;
       });
 
-    if (!orderedAccounts.some((item) => isPixAccount(item.data.name))) {
+    if (
+      !orderedAccounts.some((item) =>
+        isPixAccount({ name: String(item.data.name || "") })
+      )
+    ) {
       const maxVariableOrder = orderedAccounts
         .filter((item) => item.data.type === "VARIABLE")
         .reduce((maxOrder, item) => {
@@ -138,11 +139,14 @@ export const createMonth = async (
     for (const item of orderedAccounts) {
       const data = item.data;
       const dueDay = getValidDueDay(data.dia_vencimento);
+      const value = isCalculatedAccount({ name: String(data.name || "") })
+        ? 0
+        : Number(data.value || 0);
 
       await addDoc(collection(db, "months", monthRef.id, "accounts"), {
         name: data.name,
         type: data.type,
-        value: Number(data.value || 0),
+        value,
         isPaid: false,
         order: Number.isFinite(Number(data.order))
           ? Number(data.order)

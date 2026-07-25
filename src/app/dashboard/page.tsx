@@ -27,6 +27,8 @@ import EditAccountModal from "../../components/EditAccountModal";
 import { useFinance } from "../../hooks/useFinance";
 import { ALLOWED_USERS } from "../../config/allowedUsers";
 
+type LauncherFilter = "matheus" | "giovana" | "all";
+
 function EyeIcon() {
   return (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -103,6 +105,8 @@ export default function DashboardPage() {
   const [pixAccount, setPixAccount] = useState<FinanceAccount | null>(null);
   const [pixEditingId, setPixEditingId] = useState<string | null>(null);
   const [pixEditValue, setPixEditValue] = useState("");
+  const [pixLauncherFilter, setPixLauncherFilter] =
+    useState<LauncherFilter>("matheus");
   const [pixDeletingTransaction, setPixDeletingTransaction] =
     useState<any>(null);
 
@@ -364,6 +368,18 @@ export default function DashboardPage() {
   const pixTransactions = transactions.filter(
     (transaction) => transaction.accountId === pixAccount?.id
   );
+  const pixFilteredTransactions = pixTransactions.filter((transaction) => {
+    if (pixLauncherFilter === "all") return true;
+
+    const raw = `${
+      transaction.launcherName ||
+      transaction.userName ||
+      transaction.userEmail ||
+      ""
+    }`.toLowerCase();
+
+    return raw.includes(pixLauncherFilter);
+  });
   const pixEditingTransaction = pixTransactions.find(
     (transaction) => transaction.id === pixEditingId
   );
@@ -859,22 +875,36 @@ export default function DashboardPage() {
                 </p>
               </div>
 
-              <button
-                onClick={closePixHistory}
-                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
-                type="button"
-              >
-                Fechar
-              </button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={pixLauncherFilter}
+                  onChange={(event) =>
+                    setPixLauncherFilter(event.target.value as LauncherFilter)
+                  }
+                  className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 outline-none"
+                >
+                  <option value="matheus">Matheus</option>
+                  <option value="giovana">Giovana</option>
+                  <option value="all">Todos</option>
+                </select>
+
+                <button
+                  onClick={closePixHistory}
+                  className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
+                  type="button"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
 
-            {pixTransactions.length === 0 ? (
+            {pixFilteredTransactions.length === 0 ? (
               <div className="bg-zinc-800/70 rounded-lg p-4 text-zinc-400">
                 Nenhum lancamento PIX encontrado neste mes.
               </div>
             ) : (
               <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
-                {pixTransactions.map((transaction) => (
+                {pixFilteredTransactions.map((transaction) => (
                   <div
                     key={transaction.id}
                     className="bg-zinc-800/70 border border-zinc-700 rounded-lg px-4 py-3"

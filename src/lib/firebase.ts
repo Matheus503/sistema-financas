@@ -9,4 +9,13 @@ export const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
+if (
+  process.env.NODE_ENV === "development" &&
+  firebaseConfig.projectId === "sistema-financas"
+) {
+  throw new Error(
+    "Ambiente local apontando para o Firebase de producao. Use sistema-financas-dev no .env.local."
+  );
+}
+
 export const app = initializeApp(firebaseConfig);
