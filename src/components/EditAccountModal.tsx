@@ -101,6 +101,7 @@ function EditAccountForm({
       ? String(account.installmentTotal)
       : ""
   );
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [showPrimaryConfirm, setShowPrimaryConfirm] = useState(false);
 
   const parseCurrency = (v: string) => {
@@ -169,6 +170,7 @@ function EditAccountForm({
     setIsArchived(false);
     setIsPrimaryCreditCard(false);
     setInstallmentTotal("");
+    setShowArchiveConfirm(false);
     setShowPrimaryConfirm(false);
     onClose();
   };
@@ -181,7 +183,10 @@ function EditAccountForm({
         isCreditCardAccount(item)
     );
 
-  const handleSave = async (skipPrimaryConfirm = false) => {
+  const handleSave = async ({
+    skipArchiveConfirm = false,
+    skipPrimaryConfirm = false,
+  } = {}) => {
     if (!monthId || !account) return;
 
     const parsedName = isPix ? account.name : name.trim();
@@ -237,6 +242,16 @@ function EditAccountForm({
       (!Number.isInteger(parsedInstallmentTotal) || parsedInstallmentTotal < 1)
     ) {
       toast.error("Informe um numero de parcelas valido.");
+      return;
+    }
+
+    if (
+      isCreditCard &&
+      isArchived &&
+      account.isArchived !== true &&
+      !skipArchiveConfirm
+    ) {
+      setShowArchiveConfirm(true);
       return;
     }
 
@@ -317,7 +332,7 @@ function EditAccountForm({
         className="bg-zinc-900 p-6 rounded-xl w-80 border border-zinc-800"
         onSubmit={(event) => {
           event.preventDefault();
-          handleSave(false);
+          handleSave();
         }}
       >
         <h2 className="mb-3 text-lg font-bold">
@@ -444,7 +459,7 @@ function EditAccountForm({
               <button
                 onClick={() => {
                   setShowPrimaryConfirm(false);
-                  handleSave(true);
+                  handleSave({ skipPrimaryConfirm: true });
                 }}
                 className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
                 type="button"
@@ -455,6 +470,47 @@ function EditAccountForm({
 
               <button
                 onClick={() => setShowPrimaryConfirm(false)}
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showArchiveConfirm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <div className="bg-zinc-900 p-6 rounded-xl w-full max-w-sm border border-zinc-800">
+            <h2 className="mb-2 text-lg font-bold">Arquivar cartão?</h2>
+
+            <div className="space-y-2 text-sm text-zinc-400 mb-5">
+              <p>
+                Este cartão será arquivado e não aparecerá automaticamente nos
+                próximos meses.
+              </p>
+              <p>
+                Os lançamentos e faturas já existentes serão mantidos no
+                histórico.
+              </p>
+            </div>
+
+            <div className="flex justify-between gap-2">
+              <button
+                onClick={() => {
+                  setShowArchiveConfirm(false);
+                  handleSave({ skipArchiveConfirm: true });
+                }}
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition"
+                type="button"
+                autoFocus
+              >
+                Arquivar
+              </button>
+
+              <button
+                onClick={() => setShowArchiveConfirm(false)}
                 className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
                 type="button"
               >
