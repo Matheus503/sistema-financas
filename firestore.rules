@@ -2,16 +2,203 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAllowedUser() {
-      return request.auth != null
-        && request.auth.token.email in [
-          "matheus.gomesmoreira@gmail.com",
-          "giovana.bonardi96@gmail.com"
-        ];
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    match /{document=**} {
-      allow read, write: if isAllowedUser();
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isCurrentUser(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isGroupMember(groupId) {
+      return isSignedIn()
+        && groupId is string
+        && userDoc().data.groupId == groupId;
+    }
+
+    function isBootstrapGroup(groupId) {
+      return exists(/databases/$(database)/documents/groups/$(groupId))
+        && get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == request.auth.uid;
+    }
+
+    function isGroupOwner(groupId, uid) {
+      return exists(/databases/$(database)/documents/groups/$(groupId))
+        && get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == uid;
+    }
+
+    function hasValidUserRole(groupId, role, uid) {
+      return (role == "admin" && isGroupOwner(groupId, uid))
+        || (role == "member" && !isGroupOwner(groupId, uid));
+    }
+
+    function hasGroupAssignment(groupId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/groupAssignments/$(request.auth.token.email))
+        && get(/databases/$(database)/documents/groupAssignments/$(request.auth.token.email)).data.groupId == groupId;
+    }
+
+    match /groups/{groupId} {
+      allow read: if isGroupMember(groupId);
+      allow create: if isSignedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.name is string;
+      allow update: if isGroupMember(groupId)
+        && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+
+    match /users/{uid} {
+      allow read: if isCurrentUser(uid) || isGroupMember(resource.data.groupId);
+      allow create: if isCurrentUser(uid)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.groupId is string
+        && request.resource.data.role in ["admin", "member"]
+        && hasValidUserRole(
+          request.resource.data.groupId,
+          request.resource.data.role,
+          request.auth.uid
+        )
+        && (
+          isBootstrapGroup(request.resource.data.groupId)
+          || hasGroupAssignment(request.resource.data.groupId)
+        );
+      allow update: if isCurrentUser(uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.role in ["admin", "member"]
+        && hasValidUserRole(
+          request.resource.data.groupId,
+          request.resource.data.role,
+          request.auth.uid
+        )
+        && (
+          request.resource.data.groupId == resource.data.groupId
+          || hasGroupAssignment(request.resource.data.groupId)
+        );
+      allow delete: if isSignedIn()
+        && (
+          isCurrentUser(uid)
+          || (
+            isGroupOwner(resource.data.groupId, request.auth.uid)
+            && uid != request.auth.uid
+            && resource.data.role != "admin"
+          )
+        );
+    }
+
+    match /registeredEmails/{email} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn()
+        && email == request.auth.token.email
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == email
+        && request.resource.data.groupId is string
+        && request.resource.data.role in ["admin", "member"]
+        && userDoc().data.groupId == request.resource.data.groupId
+        && userDoc().data.role == request.resource.data.role;
+      allow update: if isSignedIn()
+        && email == request.auth.token.email
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.groupId is string
+        && request.resource.data.role in ["admin", "member"]
+        && userDoc().data.groupId == request.resource.data.groupId
+        && userDoc().data.role == request.resource.data.role;
+      allow delete: if isSignedIn()
+        && (
+          resource.data.uid == request.auth.uid
+          || isGroupOwner(resource.data.groupId, request.auth.uid)
+        );
+    }
+
+    match /groupAssignments/{email} {
+      allow read: if (isSignedIn() && email == request.auth.token.email)
+        || isGroupMember(resource.data.groupId);
+      allow create: if isSignedIn()
+        && request.resource.data.name is string
+        && request.resource.data.email == email
+        && !exists(/databases/$(database)/documents/registeredEmails/$(email))
+        && request.resource.data.groupId is string
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.status == "pending"
+        && isGroupMember(request.resource.data.groupId);
+      allow update: if isSignedIn()
+        && resource.data.email == email
+        && request.resource.data.name is string
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.createdByUid == resource.data.createdByUid
+        && request.resource.data.status == "pending"
+        && isGroupMember(resource.data.groupId);
+      allow delete: if isSignedIn()
+        && isGroupOwner(resource.data.groupId, request.auth.uid);
+    }
+
+    match /categories/{categoryId} {
+      allow read, delete: if isGroupMember(resource.data.groupId);
+      allow create: if isGroupMember(request.resource.data.groupId)
+        && request.resource.data.name is string
+        && request.resource.data.groupId is string;
+      allow update: if isGroupMember(resource.data.groupId)
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.name is string;
+    }
+
+    match /installmentPurchases/{purchaseId} {
+      allow read, delete: if isGroupMember(resource.data.groupId);
+      allow create: if isGroupMember(request.resource.data.groupId)
+        && request.resource.data.groupId is string
+        && request.resource.data.creditCardKey is string
+        && request.resource.data.cardName is string;
+      allow update: if isGroupMember(resource.data.groupId)
+        && request.resource.data.groupId == resource.data.groupId;
+    }
+
+    match /months/{monthId} {
+      allow read, delete: if isGroupMember(resource.data.groupId);
+      allow update: if isGroupMember(resource.data.groupId)
+        && request.resource.data.groupId == resource.data.groupId;
+      allow create: if isGroupMember(request.resource.data.groupId);
+
+      match /accounts/{accountId} {
+        allow read, write: if isGroupMember(
+          get(/databases/$(database)/documents/months/$(monthId)).data.groupId
+        );
+      }
+
+      match /transactions/{transactionId} {
+        allow read, write: if isGroupMember(
+          get(/databases/$(database)/documents/months/$(monthId)).data.groupId
+        );
+      }
+    }
+
+    match /investments/{investmentId} {
+      allow read, delete: if isGroupMember(resource.data.groupId);
+      allow update: if isGroupMember(resource.data.groupId)
+        && request.resource.data.groupId == resource.data.groupId;
+      allow create: if isGroupMember(request.resource.data.groupId);
+    }
+
+    match /settings/{settingId} {
+      allow read, delete: if isGroupMember(resource.data.groupId);
+      allow update: if isGroupMember(resource.data.groupId)
+        && request.resource.data.groupId == resource.data.groupId;
+      allow create: if isGroupMember(request.resource.data.groupId);
+    }
+
+    match /configurations/{configurationId} {
+      allow read, delete: if isGroupMember(resource.data.groupId);
+      allow update: if isGroupMember(resource.data.groupId)
+        && request.resource.data.groupId == resource.data.groupId;
+      allow create: if isGroupMember(request.resource.data.groupId);
     }
   }
 }

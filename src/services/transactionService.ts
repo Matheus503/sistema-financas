@@ -19,6 +19,9 @@ export type AddTransactionPayload = {
   launcherId?: string;
   launcherName?: string;
   date: string;
+  installmentGroupId?: string;
+  installmentCurrent?: number;
+  installmentTotal?: number;
 };
 
 export const addTransaction = async (

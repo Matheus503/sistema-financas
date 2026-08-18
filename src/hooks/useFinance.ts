@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   getAccountsByMonth,
+  isCreditCardAccount,
   toggleAccountPaid,
 } from "../services/accountService";
 import { getTransactions } from "../services/transactionService";
@@ -33,7 +34,7 @@ export function useFinance() {
 const getAccountValue = (acc: any) => {
   const baseValue = Number(acc?.value || 0);
 
-  if (!String(acc?.name || "").includes("Nubank")) {
+  if (!isCreditCardAccount(acc)) {
     return baseValue;
   }
 

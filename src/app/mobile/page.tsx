@@ -6,12 +6,23 @@ import {
   Eye,
   EyeOff,
   Menu,
+  Plus,
   Trash2,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { auth } from "../../lib/auth";
 import { getAllMonths } from "../../services/monthService";
+import {
+  createGroupAssignment,
+  deleteGroupMember,
+  deleteCurrentUserAccount,
+  ensureUserProfile,
+  ExistingOwnerAccountError,
+  getGroupMembers,
+  type GroupMemberListItem,
+} from "../../services/userService";
 
 import {
   getTransactions,
@@ -22,7 +33,7 @@ import {
 import {
   formatAccountNameWithDueDay,
   getAccountsByMonth,
-  isNubankCreditCardAccount,
+  isCreditCardAccount,
 } from "../../services/accountService";
 
 import type { FinanceAccount } from "../../services/accountService";
@@ -30,15 +41,19 @@ import type { FinanceAccount } from "../../services/accountService";
 import LaunchModal from "../../components/LaunchModal";
 import EditAccountModal from "../../components/EditAccountModal";
 
-type LauncherFilter =
-  | "matheus"
-  | "giovana"
-  | "all";
+const ALL_LAUNCHERS = "all";
+
+type LauncherFilter = string;
 
 export default function MobileDashboard() {
   const router = useRouter();
+  const fieldLabelClass = "mb-1 block text-xs font-semibold text-zinc-400";
+
+  const [user, setUser] =
+    useState<any>(null);
 
   const [months, setMonths] = useState<any[]>([]);
+  const [groupId, setGroupId] = useState("");
   const [currentIndex, setCurrentIndex] =
     useState(0);
 
@@ -65,11 +80,70 @@ export default function MobileDashboard() {
     setShowAccountMenu,
   ] = useState(false);
 
+  const [
+    showUserMenu,
+    setShowUserMenu,
+  ] = useState(false);
+
+  const [
+    showMembersModal,
+    setShowMembersModal,
+  ] = useState(false);
+
+  const [members, setMembers] =
+    useState<GroupMemberListItem[]>([]);
+
+  const [
+    isLoadingMembers,
+    setIsLoadingMembers,
+  ] = useState(false);
+
+  const [
+    showAddMemberModal,
+    setShowAddMemberModal,
+  ] = useState(false);
+
+  const [memberName, setMemberName] =
+    useState("");
+
+  const [memberEmail, setMemberEmail] =
+    useState("");
+
+  const [
+    isSavingMember,
+    setIsSavingMember,
+  ] = useState(false);
+
+  const [
+    memberToDelete,
+    setMemberToDelete,
+  ] = useState<GroupMemberListItem | null>(null);
+
+  const [
+    isDeletingMember,
+    setIsDeletingMember,
+  ] = useState(false);
+
+  const [
+    showMoreOptionsModal,
+    setShowMoreOptionsModal,
+  ] = useState(false);
+
+  const [
+    showDeleteAccountModal,
+    setShowDeleteAccountModal,
+  ] = useState(false);
+
+  const [
+    isDeletingAccount,
+    setIsDeletingAccount,
+  ] = useState(false);
+
   const [showValues, setShowValues] =
     useState(false);
 
   const [launcherFilter, setLauncherFilter] =
-    useState<LauncherFilter>("matheus");
+    useState<LauncherFilter>(ALL_LAUNCHERS);
 
   // 🔥 edição rápida
   const [editTransaction, setEditTransaction] =
@@ -94,6 +168,20 @@ export default function MobileDashboard() {
     showValues
       ? formatMoney(value)
       : "••••••";
+
+  const getInitials = (email?: string | null) => {
+    if (!email) return "?";
+
+    const prefix = email.split("@")[0];
+    const parts = prefix.split(/[._-]/g).filter(Boolean);
+
+    if (!parts.length) return prefix.slice(0, 2).toUpperCase();
+
+    return parts
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("");
+  };
 
   const formatDate = (date: string) => {
     if (!date) return "";
@@ -145,47 +233,53 @@ export default function MobileDashboard() {
 
     if (!raw) return "";
 
-    const normalized =
-      String(raw).toLowerCase();
-
-    if (
-      normalized.includes("matheus")
-    )
-      return "Matheus";
-
-    if (
-      normalized.includes("giovana")
-    )
-      return "Giovana";
-
     return String(raw)
       .split("@")[0]
       .split(" ")[0];
   };
 
-  const getCurrentUserFilter = () => {
-    const raw = `${
-      auth.currentUser?.displayName ||
-      ""
-    } ${
-      auth.currentUser?.email || ""
-    }`.toLowerCase();
+  const normalizeText = (value: string) =>
+    String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
 
-    if (raw.includes("giovana"))
-      return "giovana";
+  const getMemberLabel = (member: GroupMemberListItem) =>
+    member.name || member.email.split("@")[0] || "Sem nome";
 
-    return "matheus";
-  };
+  const transactionMatchesMember = (
+    transaction: any,
+    member: GroupMemberListItem
+  ) => {
+    const launcherId =
+      transaction.launcherId ||
+      transaction.userId ||
+      "";
 
-  const isCurrentUserMatheus = () => {
-    const raw = `${
-      auth.currentUser?.displayName ||
-      ""
-    } ${
-      auth.currentUser?.email || ""
-    }`.toLowerCase();
+    if (
+      member.status === "active" &&
+      launcherId &&
+      launcherId === member.id
+    ) {
+      return true;
+    }
 
-    return raw.includes("matheus");
+    const rawLauncher = normalizeText(
+      `${transaction.launcherName || ""} ${transaction.userName || ""}`
+    );
+    const memberName = normalizeText(member.name);
+    const memberEmail = normalizeText(member.email);
+    const memberEmailPrefix = normalizeText(
+      member.email.split("@")[0] || ""
+    );
+
+    return Boolean(
+      rawLauncher &&
+        ((memberName && rawLauncher.includes(memberName)) ||
+          (memberEmail && rawLauncher.includes(memberEmail)) ||
+          (memberEmailPrefix && rawLauncher.includes(memberEmailPrefix)))
+    );
   };
 
   // 🔥 máscara monetária
@@ -221,6 +315,137 @@ export default function MobileDashboard() {
     );
   };
 
+  const handleLogout = async () => {
+    await auth.signOut();
+    setShowUserMenu(false);
+    setShowMembersModal(false);
+    setShowAddMemberModal(false);
+    setShowMoreOptionsModal(false);
+    setShowDeleteAccountModal(false);
+    router.push("/");
+  };
+
+  const confirmDeleteAccount = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    setIsDeletingAccount(true);
+
+    try {
+      const currentProfile = await ensureUserProfile(currentUser);
+      await deleteCurrentUserAccount(currentProfile);
+      await auth.signOut();
+      router.push("/");
+      toast.success("Conta excluida com sucesso.");
+    } catch (error) {
+      console.error("Erro ao excluir conta:", error);
+      toast.error("Nao foi possivel excluir a conta.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const openMembers = async () => {
+    if (!groupId) return;
+
+    setShowUserMenu(false);
+    setShowMembersModal(true);
+    setIsLoadingMembers(true);
+
+    try {
+      const groupMembers = await getGroupMembers(groupId);
+      setMembers(groupMembers);
+    } catch (error) {
+      console.error("Erro ao carregar membros:", error);
+      toast.error("Nao foi possivel carregar os membros.");
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  };
+
+  const openAddMember = () => {
+    setMemberName("");
+    setMemberEmail("");
+    setShowAddMemberModal(true);
+  };
+
+  const closeAddMember = () => {
+    if (isSavingMember) return;
+
+    setMemberName("");
+    setMemberEmail("");
+    setShowAddMemberModal(false);
+  };
+
+  const saveMember = async () => {
+    const currentUser = auth.currentUser;
+    const normalizedName = memberName.trim();
+    const normalizedEmail = memberEmail.trim().toLowerCase();
+
+    if (!groupId || !currentUser) return;
+
+    if (!normalizedName) {
+      toast.error("Informe o nome do membro.");
+      return;
+    }
+
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      toast.error("Informe um e-mail valido.");
+      return;
+    }
+
+    setIsSavingMember(true);
+
+    try {
+      await createGroupAssignment(
+        normalizedName,
+        normalizedEmail,
+        groupId,
+        currentUser.uid
+      );
+
+      const groupMembers = await getGroupMembers(groupId);
+      setMembers(groupMembers);
+      setMemberName("");
+      setMemberEmail("");
+      setShowAddMemberModal(false);
+      toast.success("Membro cadastrado com sucesso.");
+    } catch (error) {
+      console.error("Erro ao cadastrar membro:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel cadastrar o membro."
+      );
+    } finally {
+      setIsSavingMember(false);
+    }
+  };
+
+  const canDeleteMembers =
+    members.some(
+      (member) => member.id === auth.currentUser?.uid && member.role === "admin"
+    );
+
+  const confirmDeleteMember = async () => {
+    if (!memberToDelete || !groupId) return;
+
+    setIsDeletingMember(true);
+
+    try {
+      await deleteGroupMember(memberToDelete);
+      const groupMembers = await getGroupMembers(groupId);
+      setMembers(groupMembers);
+      setMemberToDelete(null);
+      toast.success("Membro removido com sucesso.");
+    } catch (error) {
+      console.error("Erro ao remover membro:", error);
+      toast.error("Nao foi possivel remover o membro.");
+    } finally {
+      setIsDeletingMember(false);
+    }
+  };
+
   // 🔹 carregar meses
   useEffect(() => {
     const load = async () => {
@@ -232,22 +457,47 @@ export default function MobileDashboard() {
         return;
       }
 
-      setLauncherFilter(
-        getCurrentUserFilter()
-      );
+      setUser(user);
 
-      setShowAccountMenu(
-        isCurrentUserMatheus()
-      );
+      setLauncherFilter(user.uid || ALL_LAUNCHERS);
 
-      const all =
-        await getAllMonths();
+      setShowAccountMenu(true);
+
+      let profile;
+
+      try {
+        profile = await ensureUserProfile(user);
+      } catch (error) {
+        if (error instanceof ExistingOwnerAccountError) {
+          toast.error(error.message);
+          await auth.signOut();
+          router.push("/");
+          return;
+        }
+
+        console.error("Erro ao carregar perfil mobile:", error);
+        toast.error("Nao foi possivel carregar seu perfil.");
+        await auth.signOut();
+        router.push("/");
+        return;
+      }
+
+      setGroupId(profile.groupId);
+
+      const [all, groupMembers] =
+        await Promise.all([
+          getAllMonths(profile.groupId),
+          getGroupMembers(profile.groupId),
+        ]);
+
+      setMembers(groupMembers);
 
       if (
         !all ||
         all.length === 0
-      )
+      ) {
         return;
+      }
 
       setMonths(all);
 
@@ -325,11 +575,7 @@ export default function MobileDashboard() {
       acc?.value || 0
     );
 
-    if (
-      !String(acc?.name || "").includes(
-        "Nubank"
-      )
-    ) {
+    if (!isCreditCardAccount(acc)) {
       return baseValue;
     }
 
@@ -355,10 +601,13 @@ export default function MobileDashboard() {
   };
 
   const cartaoAccount =
+    accounts.find(
+      (a) =>
+        isCreditCardAccount(a) &&
+        a.isPrimaryCreditCard === true
+    ) ||
     accounts.find((a) =>
-      a.name
-        ?.toLowerCase()
-        .includes("nubank")
+      isCreditCardAccount(a)
     );
 
   const cartao =
@@ -373,13 +622,18 @@ export default function MobileDashboard() {
       const launcherName =
         getLauncherName(transaction);
 
-      if (launcherFilter === "all")
+      if (launcherFilter === ALL_LAUNCHERS)
         return true;
 
-      return (
-        launcherName.toLowerCase() ===
-        launcherFilter
+      const member = members.find(
+        (item) => item.id === launcherFilter
       );
+
+      if (member) {
+        return transactionMatchesMember(transaction, member);
+      }
+
+      return launcherName.toLowerCase() === launcherFilter.toLowerCase();
     });
 
   const monthTransactions = [
@@ -484,6 +738,58 @@ export default function MobileDashboard() {
           </button>
         )}
 
+        <div className="absolute right-0">
+          <button
+            onClick={() => setShowUserMenu((prev) => !prev)}
+            className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center shadow-lg overflow-hidden border border-purple-400/20"
+            type="button"
+            aria-label="Abrir menu do usuario"
+          >
+            {user?.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt="Foto do usuario"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="font-bold text-sm">
+                {getInitials(user?.email)}
+              </span>
+            )}
+          </button>
+
+          {showUserMenu && (
+            <div className="absolute right-0 mt-2 min-w-36 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 z-50">
+              <button
+                onClick={openMembers}
+                className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+                type="button"
+              >
+                Membros
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowUserMenu(false);
+                  setShowMoreOptionsModal(true);
+                }}
+                className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+                type="button"
+              >
+                Mais opções
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+                type="button"
+              >
+                Sair
+              </button>
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-4 bg-zinc-900 px-5 py-2 rounded-full">
 
           <button onClick={goPrev}>
@@ -507,7 +813,75 @@ export default function MobileDashboard() {
         </div>
       </div>
 
-      {/* CARTAO NUBANK */}
+      {showMoreOptionsModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-bold">Mais opções</h2>
+
+              <button
+                onClick={() => setShowMoreOptionsModal(false)}
+                className="bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-lg text-sm"
+                type="button"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowMoreOptionsModal(false);
+                setShowDeleteAccountModal(true);
+              }}
+              className="w-full bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition"
+              type="button"
+            >
+              Excluir conta
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDeleteAccountModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5">
+            <h2 className="text-lg font-bold mb-3">Excluir conta permanentemente</h2>
+
+            <p className="text-sm text-zinc-400">
+              Esta ação excluirá permanentemente sua conta do sistema financeiro.
+              Se você for administrador de um grupo, todos os dados desse grupo
+              serão apagados, incluindo meses, contas, lançamentos, categorias,
+              convites e membros. Esta ação não pode ser desfeita.
+            </p>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={confirmDeleteAccount}
+                disabled={isDeletingAccount}
+                type="button"
+                autoFocus
+              >
+                {isDeletingAccount ? "Excluindo..." : "Excluir conta"}
+              </button>
+
+              <button
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (isDeletingAccount) return;
+                  setShowDeleteAccountModal(false);
+                }}
+                disabled={isDeletingAccount}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CARTAO DE CREDITO PRINCIPAL */}
       <div className="bg-purple-600 p-5 rounded-2xl">
 
         <div className="flex justify-between items-center">
@@ -517,7 +891,7 @@ export default function MobileDashboard() {
             onClick={() => {
               if (
                 cartaoAccount &&
-                !isNubankCreditCardAccount(
+                !isCreditCardAccount(
                   cartaoAccount
                 )
               ) {
@@ -531,7 +905,7 @@ export default function MobileDashboard() {
               ? formatAccountNameWithDueDay(
                   cartaoAccount
                 )
-              : "Cartão de Cred Nubank"}
+              : "Cartão de crédito principal"}
           </p>
 
           <button
@@ -574,15 +948,18 @@ export default function MobileDashboard() {
             }
             className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-200 outline-none"
           >
-            <option value="matheus">
-              Matheus
-            </option>
-            <option value="giovana">
-              Giovana
-            </option>
-            <option value="all">
+            <option value={ALL_LAUNCHERS}>
               Todos
             </option>
+
+            {members.map((member) => (
+              <option
+                key={member.id}
+                value={member.id}
+              >
+                {getMemberLabel(member)}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -854,6 +1231,186 @@ export default function MobileDashboard() {
         </div>
       )}
 
+      {showMembersModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-bold">Membros</h2>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={openAddMember}
+                  className="bg-purple-600 hover:bg-purple-700 p-2 rounded-lg"
+                  type="button"
+                  title="Cadastrar membro"
+                  aria-label="Cadastrar membro"
+                >
+                  <Plus size={18} />
+                </button>
+
+                <button
+                  onClick={() => setShowMembersModal(false)}
+                  className="bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-lg text-sm"
+                  type="button"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            {isLoadingMembers ? (
+              <div className="text-sm text-zinc-400">Carregando...</div>
+            ) : members.length === 0 ? (
+              <div className="text-sm text-zinc-400">
+                Nenhum membro encontrado.
+              </div>
+            ) : (
+              <div className="max-h-[58vh] overflow-y-auto pr-1 space-y-2">
+                {members.map((member) => (
+                  <div
+                    key={member.id}
+                    className="bg-zinc-800/70 border border-zinc-700 rounded-xl px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 font-semibold truncate">
+                        {member.name || member.email.split("@")[0]}
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-2">
+                        {member.role === "admin" && (
+                          <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-[11px] font-semibold text-purple-100 border border-purple-400/20">
+                            Admin
+                          </span>
+                        )}
+
+                        {member.status === "pending" && (
+                          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-200 border border-amber-400/20">
+                            Pendente
+                          </span>
+                        )}
+
+                        {canDeleteMembers && member.role !== "admin" && (
+                          <button
+                            type="button"
+                            onClick={() => setMemberToDelete(member)}
+                            className="p-1 text-zinc-500 hover:text-red-300 transition"
+                            title="Remover membro"
+                            aria-label={`Remover membro ${
+                              member.name || member.email
+                            }`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-zinc-400 break-words mt-1">
+                      {member.email}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {memberToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5">
+            <h2 className="text-lg font-bold mb-2">Remover membro</h2>
+
+            <p className="text-sm text-zinc-400">
+              Deseja remover{" "}
+              {memberToDelete.name || memberToDelete.email.split("@")[0]} do
+              grupo?
+            </p>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={confirmDeleteMember}
+                disabled={isDeletingMember}
+                type="button"
+                autoFocus
+              >
+                {isDeletingMember ? "Removendo..." : "Remover"}
+              </button>
+
+              <button
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (isDeletingMember) return;
+                  setMemberToDelete(null);
+                }}
+                disabled={isDeletingMember}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddMemberModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <form
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveMember();
+            }}
+          >
+            <h2 className="text-lg font-bold mb-4">Cadastrar membro</h2>
+
+            <label className="block mb-3">
+              <span className={fieldLabelClass}>Nome</span>
+              <input
+                value={memberName}
+                onChange={(event) => setMemberName(event.target.value)}
+                placeholder="Nome"
+                disabled={isSavingMember}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 outline-none"
+                autoFocus
+              />
+            </label>
+
+            <label className="block mb-4">
+              <span className={fieldLabelClass}>E-mail</span>
+              <input
+                type="email"
+                value={memberEmail}
+                onChange={(event) => setMemberEmail(event.target.value)}
+                placeholder="email@exemplo.com"
+                disabled={isSavingMember}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 outline-none"
+              />
+            </label>
+
+            <div className="flex justify-between gap-2">
+              <button
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingMember}
+                type="submit"
+              >
+                {isSavingMember ? "Salvando..." : "Salvar"}
+              </button>
+
+              <button
+                onClick={closeAddMember}
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingMember}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* 🔥 MODAL LANÇAMENTO */}
       <LaunchModal
         open={openModal}
@@ -870,7 +1427,9 @@ export default function MobileDashboard() {
           targetMonthId
         ) => {
           const refreshed =
-            await getAllMonths();
+            groupId
+              ? await getAllMonths(groupId)
+              : [];
 
           setMonths(refreshed);
 
@@ -904,6 +1463,7 @@ export default function MobileDashboard() {
         }
         monthId={monthId}
         account={detailsAccount}
+        accounts={accounts}
         setAccounts={setAccounts}
       />
 

@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "sistema-financas"
+    "default": "sistema-financas-dev",
+    "dev": "sistema-financas-dev",
+    "prod": "sistema-financas"
   }
 }

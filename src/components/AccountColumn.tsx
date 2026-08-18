@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import {
   formatAccountNameWithDueDay,
   isCalculatedAccount,
+  isCreditCardAccount,
   isPixAccount,
 } from "../services/accountService";
 import type { FinanceAccount } from "../services/accountService";
@@ -20,7 +21,7 @@ type Props = {
   onEdit: (acc: FinanceAccount) => void;
   onEditDetails: (acc: FinanceAccount) => void;
   onAdd: (type: string) => void;
-  onOpenStatement?: () => void;
+  onOpenStatement?: (acc: FinanceAccount) => void;
   onOpenPixHistory?: (acc: FinanceAccount) => void;
   onEditExpectedValue?: (acc: FinanceAccount) => void;
   onReorder?: (type: string, draggedId: string, targetId: string) => void;
@@ -129,9 +130,10 @@ export default function AccountColumn({
       <div className="space-y-2">
         {columnAccounts
           .map((acc) => {
-            const isNubank = acc.name?.includes("Nubank");
+            const isCreditCard = isCreditCardAccount(acc);
             const isPix = isPixAccount(acc);
             const isProtectedAccount = isCalculatedAccount(acc);
+            const canEditDetails = !isProtectedAccount || isCreditCard || isPix;
 
             return (
               <div
@@ -149,13 +151,13 @@ export default function AccountColumn({
               >
                 <span
                   className={`pr-2 ${
-                    isProtectedAccount
+                    !canEditDetails
                       ? "cursor-default"
                       : "cursor-pointer hover:underline"
                   }`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (isProtectedAccount) return;
+                    if (!canEditDetails) return;
                     onEditDetails(acc);
                   }}
                 >
@@ -166,10 +168,10 @@ export default function AccountColumn({
                   className="flex gap-2 items-center"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {isNubank ? (
+                  {isCreditCard ? (
                     <div className="flex items-center gap-1 font-semibold">
                       <span
-                        onClick={() => onOpenStatement?.()}
+                        onClick={() => onOpenStatement?.(acc)}
                         className="cursor-pointer hover:underline"
                       >
                         {formatMoney(getAccountValue(acc))}

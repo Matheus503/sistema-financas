@@ -7,6 +7,11 @@ import { useRouter } from "next/navigation";
 import { auth } from "../../lib/auth";
 import { getTransactions } from "../../services/transactionService";
 import { getAllMonths } from "../../services/monthService";
+import {
+  ensureUserProfile,
+  getGroupMembers,
+  type GroupMemberListItem,
+} from "../../services/userService";
 
 import {
   PieChart,
@@ -26,7 +31,9 @@ type MonthDoc = {
   month: number;
 };
 
-type LauncherFilter = "all" | "Matheus" | "Giovana";
+const ALL_LAUNCHERS = "all";
+
+type LauncherFilter = string;
 
 const COLORS = [
   "#8B5CF6",
@@ -46,7 +53,8 @@ export default function ExtratoTotalPage() {
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [launcherFilter, setLauncherFilter] =
-    useState<LauncherFilter>("all");
+    useState<LauncherFilter>(ALL_LAUNCHERS);
+  const [members, setMembers] = useState<GroupMemberListItem[]>([]);
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,26 +65,66 @@ export default function ExtratoTotalPage() {
       currency: "BRL",
     });
 
-  const normalizeLauncher = (value: string) => {
-    const v = String(value || "").toLowerCase();
-    if (v.includes("matheus")) return "Matheus";
-    if (v.includes("giovana")) return "Giovana";
-    return "";
+  const normalizeText = (value: string) =>
+    String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  const getMemberLabel = (member: GroupMemberListItem) =>
+    member.name || member.email.split("@")[0] || "Sem nome";
+  const transactionMatchesMember = (
+    transaction: any,
+    member: GroupMemberListItem
+  ) => {
+    const launcherId = transaction.launcherId || transaction.userId || "";
+
+    if (member.status === "active" && launcherId && launcherId === member.id) {
+      return true;
+    }
+
+    const rawLauncher = normalizeText(
+      `${transaction.launcherName || ""} ${transaction.userName || ""} ${
+        transaction.userEmail || ""
+      }`
+    );
+    const memberName = normalizeText(member.name);
+    const memberEmail = normalizeText(member.email);
+    const memberEmailPrefix = normalizeText(member.email.split("@")[0] || "");
+
+    return Boolean(
+      rawLauncher &&
+        ((memberName && rawLauncher.includes(memberName)) ||
+          (memberEmail && rawLauncher.includes(memberEmail)) ||
+          (memberEmailPrefix && rawLauncher.includes(memberEmailPrefix)))
+    );
   };
 
   useEffect(() => {
-    const load = async () => {
-      const data = (await getAllMonths()) as MonthDoc[];
+    const unsub = auth.onAuthStateChanged(async (user) => {
+      if (!user) {
+        router.push("/");
+        return;
+      }
+
+      const profile = await ensureUserProfile(user);
+      const [data, groupMembers] = await Promise.all([
+        getAllMonths(profile.groupId) as Promise<MonthDoc[]>,
+        getGroupMembers(profile.groupId),
+      ]);
       setMonths(data);
+      setMembers(groupMembers);
 
       if (data.length) {
         const last = data[data.length - 1];
         setSelectedYear(Number(last.year));
+      } else {
+        setLoading(false);
       }
-    };
+    });
 
-    load();
-  }, []);
+    return () => unsub();
+  }, [router]);
 
   useEffect(() => {
     const load = async () => {
@@ -97,18 +145,18 @@ export default function ExtratoTotalPage() {
         );
       }
 
-      let all: any[] = [];
+      const transactionsByMonth = await Promise.all(
+        targetMonths.map(async (m) => {
+          const trans = await getTransactions(m.id);
 
-      for (const m of targetMonths) {
-        const trans = await getTransactions(m.id);
+          return trans.map((t: any) => ({
+            ...t,
+            month: m.month,
+          }));
+        })
+      );
 
-        const enriched = trans.map((t: any) => ({
-          ...t,
-          month: m.month,
-        }));
-
-        all = [...all, ...enriched];
-      }
+      const all = transactionsByMonth.flat();
 
       setTransactions(all);
       setLoading(false);
@@ -118,16 +166,22 @@ export default function ExtratoTotalPage() {
   }, [selectedYear, selectedMonth, months, router]);
 
   const filteredTransactions = useMemo(() => {
-    if (launcherFilter === "all") return transactions;
+    if (launcherFilter === ALL_LAUNCHERS) return transactions;
+
+    const selectedMember = members.find(
+      (member) => member.id === launcherFilter
+    );
 
     return transactions.filter((t) => {
-      const launcher =
-        normalizeLauncher(t.launcherName) ||
-        normalizeLauncher(t.userName);
+      if (selectedMember) return transactionMatchesMember(t, selectedMember);
 
-      return launcher === launcherFilter;
+      const rawLauncher = normalizeText(
+        `${t.launcherName || ""} ${t.userName || ""} ${t.userEmail || ""}`
+      );
+
+      return rawLauncher.includes(normalizeText(launcherFilter));
     });
-  }, [transactions, launcherFilter]);
+  }, [transactions, launcherFilter, members]);
 
   const categories = useMemo(() => {
     return [
@@ -250,9 +304,12 @@ export default function ExtratoTotalPage() {
             }
             className="bg-zinc-800 px-4 py-2 rounded-lg outline-none border border-zinc-700"
           >
-            <option value="all">Todos</option>
-            <option value="Matheus">Matheus</option>
-            <option value="Giovana">Giovana</option>
+            <option value={ALL_LAUNCHERS}>Todos</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {getMemberLabel(member)}
+              </option>
+            ))}
           </select>
         </div>
 

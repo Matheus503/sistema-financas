@@ -10,3 +10,26 @@ body {
   color: #fff;
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.category-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #52525b transparent;
+}
+
+.category-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.category-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.category-scroll::-webkit-scrollbar-thumb {
+  background: #52525b;
+  border-radius: 999px;
+  border: 2px solid #18181b;
+}
+
+.category-scroll::-webkit-scrollbar-thumb:hover {
+  background: #71717a;
+}

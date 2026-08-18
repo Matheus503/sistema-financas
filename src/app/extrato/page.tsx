@@ -7,7 +7,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { auth } from "../../lib/auth";
 import { getAllMonths } from "../../services/monthService";
-import { getAccountsByMonth } from "../../services/accountService";
+import {
+  ensureUserProfile,
+  getGroupMembers,
+  type GroupMemberListItem,
+} from "../../services/userService";
+import {
+  getAccountsByMonth,
+  isCreditCardAccount,
+} from "../../services/accountService";
 import {
   deleteTransaction,
   getTransactions,
@@ -15,7 +23,6 @@ import {
 } from "../../services/transactionService";
 import TransactionList from "../../components/TransactionList";
 import LaunchModal from "../../components/LaunchModal";
-import { ALLOWED_USERS } from "../../config/allowedUsers";
 import type { FinanceAccount } from "../../services/accountService";
 
 type MonthDoc = {
@@ -41,6 +48,8 @@ type ExtratoItem = {
   id: string;
   transactionId: string;
   monthId: string;
+  accountId?: string;
+  accountName?: string;
   date: string;
   value: number;
   monthLabel: string;
@@ -73,19 +82,20 @@ const monthNames = [
   "Dezembro",
 ];
 
-type LauncherFilter = "Matheus" | "Giovana" | "all";
+const ALL_LAUNCHERS = "all";
+const ALL_CREDIT_CARDS = "all";
 
 function ExtratoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedMonthId = searchParams.get("monthId");
+  const requestedCreditCardId = searchParams.get("creditCardId");
 
   const [loading, setLoading] = useState(true);
   const [showValues, setShowValues] = useState(true);
 
   const [currentUserId, setCurrentUserId] = useState("");
-  const [currentLauncherName, setCurrentLauncherName] =
-    useState<LauncherFilter | "">("");
+  const [groupMembers, setGroupMembers] = useState<GroupMemberListItem[]>([]);
 
   const [allItems, setAllItems] = useState<ExtratoItem[]>([]);
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
@@ -93,13 +103,13 @@ function ExtratoContent() {
   const [activeMonthId, setActiveMonthId] = useState<string | null>(null);
   const [groups, setGroups] = useState<TransactionGroup[]>([]);
   const [total, setTotal] = useState(0);
-  const [monthTitle, setMonthTitle] = useState("Extrato Nubank");
+  const [monthTitle, setMonthTitle] = useState("Extrato de cartão");
   const [showLaunchModal, setShowLaunchModal] = useState(false);
 
   const [filterDate, setFilterDate] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
-  const [filterLauncher, setFilterLauncher] =
-    useState<LauncherFilter>("all");
+  const [filterLauncher, setFilterLauncher] = useState(ALL_LAUNCHERS);
+  const [filterCreditCard, setFilterCreditCard] = useState(ALL_CREDIT_CARDS);
 
   const [showEdit, setShowEdit] = useState(false);
   const [editItem, setEditItem] = useState<ExtratoItem | null>(null);
@@ -109,6 +119,10 @@ function ExtratoContent() {
   const [showDelete, setShowDelete] = useState(false);
   const [itemToDelete, setItemToDelete] =
     useState<ExtratoItem | null>(null);
+
+  useEffect(() => {
+    setFilterCreditCard(requestedCreditCardId || ALL_CREDIT_CARDS);
+  }, [requestedCreditCardId]);
 
   const formatMoney = (v: number) =>
     v.toLocaleString("pt-BR", {
@@ -131,38 +145,57 @@ function ExtratoContent() {
   const formatMonthLabel = (month: number, year: number) =>
     `Fatura ${String(month).padStart(2, "0")}/${year}`;
 
-  const normalizeLauncherName = (value: string) => {
-    const lower = String(value || "").toLowerCase();
+  const normalizeText = (value: string) =>
+    String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
 
-    if (lower.includes("matheus")) return "Matheus";
-    if (lower.includes("giovana")) return "Giovana";
+  const getMemberLabel = (member: GroupMemberListItem) =>
+    member.name || member.email.split("@")[0] || "Sem nome";
 
-    return "";
+  const getSelectedLauncherLabel = () => {
+    if (filterLauncher === ALL_LAUNCHERS) return "Todos os Lancamentos";
+
+    const member = groupMembers.find((item) => item.id === filterLauncher);
+    return member ? `Lancamentos ${getMemberLabel(member)}` : "Lancamentos";
   };
 
-  const resolveCurrentLauncher = (user: any): LauncherFilter | "" => {
-    const raw = `${user?.displayName || ""} ${user?.email || ""}`;
-    return normalizeLauncherName(raw) as LauncherFilter | "";
+  const creditCardAccounts = useMemo(() => {
+    return accounts.filter((account) => isCreditCardAccount(account));
+  }, [accounts]);
+
+  const getSelectedCreditCardLabel = () => {
+    if (filterCreditCard === ALL_CREDIT_CARDS) return "Todos os cartões";
+
+    const card = creditCardAccounts.find((item) => item.id === filterCreditCard);
+    return card?.name || "Cartão";
   };
 
-  const getItemLauncher = (item: ExtratoItem) => {
-    if (item.launcherName) {
-      const normalized = normalizeLauncherName(item.launcherName);
-      if (normalized) return normalized;
+  const itemMatchesMember = (
+    item: ExtratoItem,
+    member: GroupMemberListItem
+  ) => {
+    const launcherId = item.launcherId || item.userId || "";
+
+    if (member.status === "active" && launcherId && launcherId === member.id) {
+      return true;
     }
 
-    if (!currentUserId || !item.userId || !currentLauncherName) {
-      return "";
-    }
+    const rawLauncher = normalizeText(
+      `${item.launcherName || ""} ${item.userName || ""}`
+    );
+    const memberName = normalizeText(member.name);
+    const memberEmail = normalizeText(member.email);
+    const memberEmailPrefix = normalizeText(member.email.split("@")[0] || "");
 
-    if (item.userId === currentUserId) {
-      return currentLauncherName;
-    }
-
-    if (currentLauncherName === "Matheus") return "Giovana";
-    if (currentLauncherName === "Giovana") return "Matheus";
-
-    return "";
+    return Boolean(
+      rawLauncher &&
+        ((memberName && rawLauncher.includes(memberName)) ||
+          (memberEmail && rawLauncher.includes(memberEmail)) ||
+          (memberEmailPrefix && rawLauncher.includes(memberEmailPrefix)))
+    );
   };
 
   const normalizeDateKey = (value: string) => {
@@ -198,7 +231,13 @@ function ExtratoContent() {
     setLoading(true);
 
     try {
-      const months = (await getAllMonths()) as MonthDoc[];
+      const profile = await ensureUserProfile(user);
+      const [months, members] = await Promise.all([
+        getAllMonths(profile.groupId) as Promise<MonthDoc[]>,
+        getGroupMembers(profile.groupId),
+      ]);
+
+      setGroupMembers(members);
 
       const targetMonth =
         months.find((m) => m.id === requestedMonthId) ||
@@ -211,7 +250,7 @@ function ExtratoContent() {
         setActiveMonthId(null);
         setGroups([]);
         setTotal(0);
-        setMonthTitle("Extrato Nubank");
+        setMonthTitle("Extrato de cartão");
         return;
       }
 
@@ -220,11 +259,17 @@ function ExtratoContent() {
         getTransactions(targetMonth.id),
       ])) as [any[], Transaction[]];
 
-      const nubankAccounts = accounts.filter((a: any) =>
-        String(a.name || "").includes("Nubank")
+      const creditCardAccounts = accounts.filter((a: FinanceAccount) =>
+        isCreditCardAccount(a)
       );
 
-      const nubankIds = new Set(nubankAccounts.map((a: any) => String(a.id)));
+      const creditCardById = new Map(
+        creditCardAccounts.map((a: FinanceAccount) => [String(a.id), a])
+      );
+
+      const creditCardIds = new Set(
+        creditCardAccounts.map((a: FinanceAccount) => String(a.id))
+      );
 
       const label = formatMonthLabel(targetMonth.month, targetMonth.year);
       const monthOrder = targetMonth.year * 100 + targetMonth.month;
@@ -237,12 +282,16 @@ function ExtratoContent() {
 
       for (const t of transactions || []) {
         if (!t || !t.accountId) continue;
-        if (!nubankIds.has(String(t.accountId))) continue;
+        if (!creditCardIds.has(String(t.accountId))) continue;
+
+        const account = creditCardById.get(String(t.accountId));
 
         items.push({
           id: `${targetMonth.id}-${t.id || Math.random()}`,
           transactionId: String(t.id),
           monthId: targetMonth.id,
+          accountId: String(t.accountId),
+          accountName: account?.name || "",
           date: t.date ? String(t.date) : "",
           value: Number(t.value ?? 0),
           monthLabel: label,
@@ -277,17 +326,8 @@ function ExtratoContent() {
         return;
       }
 
-      if (!user.email || !ALLOWED_USERS.includes(user.email)) {
-        await auth.signOut();
-        router.push("/");
-        return;
-      }
-
       setCurrentUserId(user.uid);
-
-      const launcher = resolveCurrentLauncher(user);
-      setCurrentLauncherName(launcher);
-      setFilterLauncher(launcher || "all");
+      setFilterLauncher(user.uid || ALL_LAUNCHERS);
 
       await loadExtrato();
     });
@@ -297,6 +337,13 @@ function ExtratoContent() {
 
   const filteredItems = useMemo(() => {
     return allItems.filter((item) => {
+      if (
+        filterCreditCard !== ALL_CREDIT_CARDS &&
+        item.accountId !== filterCreditCard
+      ) {
+        return false;
+      }
+
       if (filterDate) {
         const itemDateKey = normalizeDateKey(item.date);
         if (itemDateKey !== filterDate) return false;
@@ -306,20 +353,20 @@ function ExtratoContent() {
         if ((item.category || "") !== filterCategory) return false;
       }
 
-      if (filterLauncher !== "all") {
-        const itemLauncher = getItemLauncher(item);
-        if (itemLauncher !== filterLauncher) return false;
+      if (filterLauncher !== ALL_LAUNCHERS) {
+        const member = groupMembers.find((item) => item.id === filterLauncher);
+        if (!member || !itemMatchesMember(item, member)) return false;
       }
 
       return true;
     });
   }, [
     allItems,
+    filterCreditCard,
     filterDate,
     filterCategory,
     filterLauncher,
-    currentUserId,
-    currentLauncherName,
+    groupMembers,
   ]);
 
   useEffect(() => {
@@ -387,7 +434,7 @@ function ExtratoContent() {
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-6 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Extrato Nubank</h1>
+          <h1 className="text-2xl font-bold">Extrato de cartão</h1>
           <p className="text-zinc-400 text-sm">
             Lançamentos da fatura do mês selecionado
           </p>
@@ -501,7 +548,7 @@ function ExtratoContent() {
       </div>
 
       <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-6">
-        <div className="grid gap-3 md:grid-cols-[180px_1fr_240px_160px] items-end">
+        <div className="grid gap-3 md:grid-cols-[180px_1fr_1fr_240px_160px] items-end">
           <div>
             <label className="block text-xs text-zinc-400 mb-2">Data</label>
             <input
@@ -534,14 +581,33 @@ function ExtratoContent() {
             </label>
             <select
               value={filterLauncher}
-              onChange={(e) =>
-                setFilterLauncher(e.target.value as LauncherFilter)
-              }
+              onChange={(e) => setFilterLauncher(e.target.value)}
               className="w-full bg-zinc-800 p-2 rounded-lg outline-none"
             >
-              <option value="Matheus">Lançamentos Matheus</option>
-              <option value="Giovana">Lançamentos Giovana</option>
-              <option value="all">Todos os Lançamentos</option>
+              {groupMembers.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {`Lancamentos ${getMemberLabel(member)}`}
+                </option>
+              ))}
+              <option value={ALL_LAUNCHERS}>Todos os Lancamentos</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs text-zinc-400 mb-2">
+              Cartão de crédito
+            </label>
+            <select
+              value={filterCreditCard}
+              onChange={(e) => setFilterCreditCard(e.target.value)}
+              className="w-full bg-zinc-800 p-2 rounded-lg outline-none"
+            >
+              <option value={ALL_CREDIT_CARDS}>Todos os cartões</option>
+              {creditCardAccounts.map((card) => (
+                <option key={card.id} value={card.id}>
+                  {card.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -549,7 +615,8 @@ function ExtratoContent() {
             onClick={() => {
               setFilterDate("");
               setFilterCategory("");
-              setFilterLauncher(currentLauncherName || "all");
+              setFilterCreditCard(ALL_CREDIT_CARDS);
+              setFilterLauncher(currentUserId || ALL_LAUNCHERS);
             }}
             className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded-xl h-[42px]"
             type="button"
@@ -559,14 +626,10 @@ function ExtratoContent() {
         </div>
 
         <div className="mt-3 text-xs text-zinc-500">
-          Fatura: {monthTitle}
+          Fatura: {monthTitle} - {getSelectedCreditCardLabel()}
           {filterDate ? ` • Data: ${filterDate}` : ""}
           {filterCategory ? ` • Categoria: ${filterCategory}` : ""}
-          {filterLauncher === "Matheus"
-            ? " • Lançamentos Matheus"
-            : filterLauncher === "Giovana"
-            ? " • Lançamentos Giovana"
-            : " • Todos os Lançamentos"}
+          {` • ${getSelectedLauncherLabel()}`}
         </div>
       </div>
 

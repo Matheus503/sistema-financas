@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { loginWithGoogle, auth } from "../lib/auth";
 import { firebaseConfig } from "../lib/firebase";
+import {
+  ensureUserProfile,
+  ExistingOwnerAccountError,
+} from "../services/userService";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,8 +43,27 @@ export default function LoginPage() {
   };
 
 useEffect(() => {
-  const unsub = auth.onAuthStateChanged((user) => {
+  const unsub = auth.onAuthStateChanged(async (user) => {
     if (!user) return;
+
+    try {
+      await ensureUserProfile(user);
+    } catch (error) {
+      if (error instanceof ExistingOwnerAccountError) {
+        const message = error.message;
+        setLoginError(message);
+        toast.error(message);
+        await auth.signOut();
+        return;
+      }
+
+      const message = "Nao foi possivel carregar seu perfil. Tente entrar novamente.";
+      setLoginError(message);
+      toast.error(message);
+      console.error("Erro ao carregar perfil:", error);
+      await auth.signOut();
+      return;
+    }
 
     const currentPath = window.location.pathname;
 

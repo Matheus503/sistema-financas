@@ -3,10 +3,20 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { auth } from "../../lib/auth";
 import { createMonth, getAllMonths } from "../../services/monthService";
+import {
+  createGroupAssignment,
+  deleteGroupMember,
+  deleteCurrentUserAccount,
+  ensureUserProfile,
+  ExistingOwnerAccountError,
+  getGroupMembers,
+  type GroupMemberListItem,
+  type UserProfile,
+} from "../../services/userService";
 import {
   deleteTransaction,
   updateTransaction,
@@ -14,6 +24,7 @@ import {
 import {
   deleteAccount,
   isCalculatedAccount,
+  isCreditCardAccount,
   updateAccountsOrder,
   updateAccountExpectedValue,
   updateAccountValue,
@@ -25,9 +36,10 @@ import LaunchModal from "../../components/LaunchModal";
 import CreateAccountModal from "../../components/CreateAccountModal";
 import EditAccountModal from "../../components/EditAccountModal";
 import { useFinance } from "../../hooks/useFinance";
-import { ALLOWED_USERS } from "../../config/allowedUsers";
 
-type LauncherFilter = "matheus" | "giovana" | "all";
+const ALL_LAUNCHERS = "all";
+
+type LauncherFilter = string;
 
 function EyeIcon() {
   return (
@@ -75,7 +87,10 @@ function EyeOffIcon() {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const fieldLabelClass = "mb-1 block text-xs font-semibold text-zinc-400";
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [user, setUser] = useState<any>(null);
+  const [groupId, setGroupId] = useState("");
   const [showValues, setShowValues] = useState(false);
 
   const [months, setMonths] = useState<any[]>([]);
@@ -106,11 +121,24 @@ export default function DashboardPage() {
   const [pixEditingId, setPixEditingId] = useState<string | null>(null);
   const [pixEditValue, setPixEditValue] = useState("");
   const [pixLauncherFilter, setPixLauncherFilter] =
-    useState<LauncherFilter>("matheus");
+    useState<LauncherFilter>(ALL_LAUNCHERS);
   const [pixDeletingTransaction, setPixDeletingTransaction] =
     useState<any>(null);
 
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [members, setMembers] = useState<GroupMemberListItem[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [memberName, setMemberName] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [isSavingMember, setIsSavingMember] = useState(false);
+  const [memberToDelete, setMemberToDelete] =
+    useState<GroupMemberListItem | null>(null);
+  const [isDeletingMember, setIsDeletingMember] = useState(false);
+  const [showMoreOptionsModal, setShowMoreOptionsModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const {
     accounts,
@@ -171,9 +199,18 @@ export default function DashboardPage() {
       .filter((a) => a.type === type)
       .reduce((sum, acc) => sum + getAccountValue(acc), 0);
 
+  const primaryCreditCard =
+    accounts.find(
+      (acc) =>
+        isCreditCardAccount(acc) &&
+        acc.isPrimaryCreditCard === true
+    ) || accounts.find((acc) => isCreditCardAccount(acc));
+
   const getExpectedAccountValue = (acc: any) => {
-    if (acc.name?.includes("Nubank")) {
-      return Number(acc.expectedValue || 0);
+    if (isCreditCardAccount(acc)) {
+      if (acc.id !== primaryCreditCard?.id) return 0;
+
+      return Number(acc.expectedValue || 0) || getAccountValue(acc);
     }
 
     return getAccountValue(acc);
@@ -195,6 +232,7 @@ export default function DashboardPage() {
 
   const clearAppState = () => {
     setMonths([]);
+    setGroupId("");
     setCurrentIndex(0);
     setMonthId(null);
     setAccounts([]);
@@ -216,6 +254,18 @@ export default function DashboardPage() {
     setPixEditValue("");
     setPixDeletingTransaction(null);
     setShowUserMenu(false);
+    setShowMembersModal(false);
+    setShowAddMemberModal(false);
+    setMembers([]);
+    setIsLoadingMembers(false);
+    setMemberName("");
+    setMemberEmail("");
+    setIsSavingMember(false);
+    setMemberToDelete(null);
+    setIsDeletingMember(false);
+    setShowMoreOptionsModal(false);
+    setShowDeleteAccountModal(false);
+    setIsDeletingAccount(false);
     setShowValues(false);
   };
 
@@ -229,26 +279,49 @@ export default function DashboardPage() {
     return;
   }
 
-  // 🔐 VALIDAÇÃO DE USUÁRIO
- if (!u.email || !ALLOWED_USERS.includes(u.email)) {
-  alert("Acesso não autorizado");
-  await auth.signOut();
-  router.push("/");
-  return;
-}
+  let profile: UserProfile;
 
-  const all = await getAllMonths();
+  try {
+    profile = await ensureUserProfile(u);
+  } catch (error) {
+    if (error instanceof ExistingOwnerAccountError) {
+      toast.error(error.message);
+      await auth.signOut();
+      clearAppState();
+      router.push("/");
+      return;
+    }
+
+    throw error;
+  }
+
+  setGroupId(profile.groupId);
+  setPixLauncherFilter(u.uid || ALL_LAUNCHERS);
+
+  try {
+    const groupMembers = await getGroupMembers(profile.groupId);
+    setMembers(groupMembers);
+  } catch (error) {
+    console.error("Erro ao carregar membros:", error);
+  }
+
+  let all = await getAllMonths(profile.groupId);
 
   if (all.length === 0) {
-    await createMonth(2026, 1, u.uid);
+    await createMonth(2026, 1, u.uid, profile.groupId);
+    all = await getAllMonths(profile.groupId);
   }
 
-  const refreshed = await getAllMonths();
-  setMonths(refreshed);
+  setMonths(all);
 
-  if (refreshed.length > 0) {
-    await loadMonth(refreshed.length - 1, refreshed);
+  if (all.length > 0) {
+    const lastIndex = all.length - 1;
+    setCurrentIndex(lastIndex);
+    setMonthId(all[lastIndex].id);
+    await loadData(all[lastIndex].id);
   }
+
+  setIsCheckingAuth(false);
 });
 
     return () => unsub();
@@ -266,7 +339,7 @@ export default function DashboardPage() {
 
   const confirmCreateNext = async () => {
     const userNow = auth.currentUser;
-    if (!userNow || !months.length) return;
+    if (!userNow || !groupId || !months.length) return;
 
     const current = months[currentIndex];
     if (!current) return;
@@ -279,9 +352,9 @@ export default function DashboardPage() {
       year++;
     }
 
-    await createMonth(year, month, userNow.uid);
+    await createMonth(year, month, userNow.uid, groupId);
 
-    const all = await getAllMonths();
+    const all = await getAllMonths(groupId);
     setMonths(all);
 
     if (all.length > 0) {
@@ -296,6 +369,127 @@ export default function DashboardPage() {
     await auth.signOut();
     clearAppState();
     router.push("/");
+  };
+
+  const confirmDeleteAccount = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    setIsDeletingAccount(true);
+
+    try {
+      const currentProfile = await ensureUserProfile(currentUser);
+      await deleteCurrentUserAccount(currentProfile);
+      await auth.signOut();
+      clearAppState();
+      router.push("/");
+      toast.success("Conta excluida com sucesso.");
+    } catch (error) {
+      console.error("Erro ao excluir conta:", error);
+      toast.error("Nao foi possivel excluir a conta.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const openMembers = async () => {
+    if (!groupId) return;
+
+    setShowUserMenu(false);
+    setShowMembersModal(true);
+    setIsLoadingMembers(true);
+
+    try {
+      const groupMembers = await getGroupMembers(groupId);
+      setMembers(groupMembers);
+    } catch (error) {
+      console.error("Erro ao carregar membros:", error);
+      toast.error("Nao foi possivel carregar os membros.");
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  };
+
+  const openAddMember = () => {
+    setMemberName("");
+    setMemberEmail("");
+    setShowAddMemberModal(true);
+  };
+
+  const closeAddMember = () => {
+    if (isSavingMember) return;
+
+    setMemberName("");
+    setMemberEmail("");
+    setShowAddMemberModal(false);
+  };
+
+  const saveMember = async () => {
+    const currentUser = auth.currentUser;
+    const normalizedName = memberName.trim();
+    const normalizedEmail = memberEmail.trim().toLowerCase();
+
+    if (!groupId || !currentUser) return;
+
+    if (!normalizedName) {
+      toast.error("Informe o nome do membro.");
+      return;
+    }
+
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      toast.error("Informe um e-mail valido.");
+      return;
+    }
+
+    setIsSavingMember(true);
+
+    try {
+      await createGroupAssignment(
+        normalizedName,
+        normalizedEmail,
+        groupId,
+        currentUser.uid
+      );
+      const groupMembers = await getGroupMembers(groupId);
+      setMembers(groupMembers);
+      setMemberName("");
+      setMemberEmail("");
+      setShowAddMemberModal(false);
+      toast.success("Membro cadastrado com sucesso.");
+    } catch (error) {
+      console.error("Erro ao cadastrar membro:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel cadastrar o membro."
+      );
+    } finally {
+      setIsSavingMember(false);
+    }
+  };
+
+  const canDeleteMembers =
+    members.some(
+      (member) => member.id === auth.currentUser?.uid && member.role === "admin"
+    );
+
+  const confirmDeleteMember = async () => {
+    if (!memberToDelete || !groupId) return;
+
+    setIsDeletingMember(true);
+
+    try {
+      await deleteGroupMember(memberToDelete);
+      const groupMembers = await getGroupMembers(groupId);
+      setMembers(groupMembers);
+      setMemberToDelete(null);
+      toast.success("Membro removido com sucesso.");
+    } catch (error) {
+      console.error("Erro ao remover membro:", error);
+      toast.error("Nao foi possivel remover o membro.");
+    } finally {
+      setIsDeletingMember(false);
+    }
   };
 
   const askDelete = (acc: any) => {
@@ -368,17 +562,56 @@ export default function DashboardPage() {
   const pixTransactions = transactions.filter(
     (transaction) => transaction.accountId === pixAccount?.id
   );
+  const normalizeText = (value: string) =>
+    String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  const getMemberLabel = (member: GroupMemberListItem) =>
+    member.name || member.email.split("@")[0] || "Sem nome";
+  const transactionMatchesMember = (
+    transaction: any,
+    member: GroupMemberListItem
+  ) => {
+    const launcherId = transaction.launcherId || transaction.userId || "";
+
+    if (member.status === "active" && launcherId && launcherId === member.id) {
+      return true;
+    }
+
+    const rawLauncher = normalizeText(
+      `${transaction.launcherName || ""} ${transaction.userName || ""} ${
+        transaction.userEmail || ""
+      }`
+    );
+    const memberName = normalizeText(member.name);
+    const memberEmail = normalizeText(member.email);
+    const memberEmailPrefix = normalizeText(member.email.split("@")[0] || "");
+
+    return Boolean(
+      rawLauncher &&
+        ((memberName && rawLauncher.includes(memberName)) ||
+          (memberEmail && rawLauncher.includes(memberEmail)) ||
+          (memberEmailPrefix && rawLauncher.includes(memberEmailPrefix)))
+    );
+  };
   const pixFilteredTransactions = pixTransactions.filter((transaction) => {
-    if (pixLauncherFilter === "all") return true;
+    if (pixLauncherFilter === ALL_LAUNCHERS) return true;
 
-    const raw = `${
-      transaction.launcherName ||
-      transaction.userName ||
-      transaction.userEmail ||
-      ""
-    }`.toLowerCase();
+    const selectedMember = members.find(
+      (member) => member.id === pixLauncherFilter
+    );
 
-    return raw.includes(pixLauncherFilter);
+    if (selectedMember) return transactionMatchesMember(transaction, selectedMember);
+
+    const raw = normalizeText(
+      `${transaction.launcherName || ""} ${transaction.userName || ""} ${
+        transaction.userEmail || ""
+      }`
+    );
+
+    return raw.includes(normalizeText(pixLauncherFilter));
   });
   const pixEditingTransaction = pixTransactions.find(
     (transaction) => transaction.id === pixEditingId
@@ -526,6 +759,23 @@ export default function DashboardPage() {
   };
 
   const extratoHref = monthId ? `/extrato?monthId=${monthId}` : "/extrato";
+  const openCreditCardStatement = (acc: FinanceAccount) => {
+    const params = new URLSearchParams();
+
+    if (monthId) {
+      params.set("monthId", monthId);
+    }
+
+    params.set("creditCardId", acc.id);
+
+    router.push(`/extrato?${params.toString()}`);
+  };
+
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-black" />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-6 py-6">
@@ -605,6 +855,25 @@ export default function DashboardPage() {
             {showUserMenu && (
               <div className="absolute right-0 mt-2 bg-zinc-900 rounded shadow p-2 z-50">
                 <button
+                  onClick={openMembers}
+                  className="px-4 py-2 hover:bg-zinc-800 rounded w-full text-left"
+                  type="button"
+                >
+                  Membros
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    setShowMoreOptionsModal(true);
+                  }}
+                  className="px-4 py-2 hover:bg-zinc-800 rounded w-full text-left"
+                  type="button"
+                >
+                  Mais opções
+                </button>
+
+                <button
                   onClick={handleLogout}
                   className="px-4 py-2 hover:bg-zinc-800 rounded w-full text-left"
                   type="button"
@@ -616,6 +885,252 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {showMoreOptionsModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-bold">Mais opções</h2>
+
+              <button
+                onClick={() => setShowMoreOptionsModal(false)}
+                className="bg-zinc-800 hover:bg-zinc-700 px-3 py-1 rounded"
+                type="button"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowMoreOptionsModal(false);
+                setShowDeleteAccountModal(true);
+              }}
+              className="w-full bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition"
+              type="button"
+            >
+              Excluir conta
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDeleteAccountModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-md p-6">
+            <h2 className="text-lg font-bold mb-3">Excluir conta permanentemente</h2>
+
+            <p className="text-sm text-zinc-400">
+              Esta ação excluirá permanentemente sua conta do sistema financeiro.
+              Se você for administrador de um grupo, todos os dados desse grupo
+              serão apagados, incluindo meses, contas, lançamentos, categorias,
+              convites e membros. Esta ação não pode ser desfeita.
+            </p>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={confirmDeleteAccount}
+                disabled={isDeletingAccount}
+                type="button"
+                autoFocus
+              >
+                {isDeletingAccount ? "Excluindo..." : "Excluir conta"}
+              </button>
+
+              <button
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (isDeletingAccount) return;
+                  setShowDeleteAccountModal(false);
+                }}
+                disabled={isDeletingAccount}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMembersModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <h2 className="text-lg font-bold">Membros</h2>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={openAddMember}
+                  className="bg-purple-600 hover:bg-purple-700 p-2 rounded"
+                  type="button"
+                  title="Cadastrar membro"
+                  aria-label="Cadastrar membro"
+                >
+                  <Plus size={18} />
+                </button>
+
+                <button
+                  onClick={() => setShowMembersModal(false)}
+                  className="bg-zinc-800 hover:bg-zinc-700 px-3 py-1 rounded"
+                  type="button"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            {isLoadingMembers ? (
+              <div className="text-zinc-400">Carregando...</div>
+            ) : members.length === 0 ? (
+              <div className="text-zinc-400">Nenhum membro encontrado.</div>
+            ) : (
+              <div className="space-y-2">
+                {members.map((member) => (
+                  <div
+                    key={member.id}
+                    className="bg-zinc-800/70 border border-zinc-700 rounded-lg px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-semibold">
+                        {member.name || member.email.split("@")[0]}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {member.role === "admin" && (
+                          <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-xs font-semibold text-purple-100 border border-purple-400/20">
+                            Admin
+                          </span>
+                        )}
+
+                        {member.status === "pending" && (
+                          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200 border border-amber-400/20">
+                            Pendente
+                          </span>
+                        )}
+
+                        {canDeleteMembers && member.role !== "admin" && (
+                          <button
+                            type="button"
+                            onClick={() => setMemberToDelete(member)}
+                            className="p-1 text-zinc-500 hover:text-red-300 transition"
+                            title="Remover membro"
+                            aria-label={`Remover membro ${
+                              member.name || member.email
+                            }`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-sm text-zinc-400 break-words">
+                      {member.email}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {memberToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-sm p-6">
+            <h2 className="text-lg font-bold mb-2">Remover membro</h2>
+
+            <p className="text-sm text-zinc-400">
+              Deseja remover{" "}
+              {memberToDelete.name || memberToDelete.email.split("@")[0]} do
+              grupo?
+            </p>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={confirmDeleteMember}
+                disabled={isDeletingMember}
+                type="button"
+                autoFocus
+              >
+                {isDeletingMember ? "Removendo..." : "Remover"}
+              </button>
+
+              <button
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (isDeletingMember) return;
+                  setMemberToDelete(null);
+                }}
+                disabled={isDeletingMember}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddMemberModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <form
+            className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-sm p-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveMember();
+            }}
+          >
+            <h2 className="text-lg font-bold mb-4">Cadastrar membro</h2>
+
+            <label className="block mb-3">
+              <span className={fieldLabelClass}>Nome</span>
+              <input
+                value={memberName}
+                onChange={(event) => setMemberName(event.target.value)}
+                placeholder="Nome"
+                disabled={isSavingMember}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded p-3 outline-none"
+                autoFocus
+              />
+            </label>
+
+            <label className="block mb-4">
+              <span className={fieldLabelClass}>E-mail</span>
+              <input
+                type="email"
+                value={memberEmail}
+                onChange={(event) => setMemberEmail(event.target.value)}
+                placeholder="email@exemplo.com"
+                disabled={isSavingMember}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded p-3 outline-none"
+              />
+            </label>
+
+            <div className="flex justify-between gap-2">
+              <button
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingMember}
+                type="submit"
+              >
+                {isSavingMember ? "Salvando..." : "Salvar"}
+              </button>
+
+              <button
+                onClick={closeAddMember}
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingMember}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* SALDO */}
       <div className="bg-purple-800 p-6 rounded-xl mb-6 flex items-center justify-between gap-6">
@@ -692,7 +1207,7 @@ export default function DashboardPage() {
           onEdit={openEdit}
           onEditDetails={setDetailsAccount}
           onAdd={(type) => setCreateModal({ open: true, type })}
-          onOpenStatement={() => router.push(extratoHref)}
+          onOpenStatement={openCreditCardStatement}
           onOpenPixHistory={setPixAccount}
           onEditExpectedValue={openExpectedEdit}
           onReorder={handleReorderAccounts}
@@ -711,16 +1226,19 @@ export default function DashboardPage() {
           >
             <h2 className="mb-3 text-lg font-bold">Editar valor</h2>
 
-            <input
-              type="tel"
-              inputMode="decimal"
-              value={editValue}
-              onChange={(e) =>
-                setEditValue(formatCurrencyTyping(e.target.value))
-              }
-              className="w-full p-2 bg-zinc-800 rounded mb-3"
-              placeholder="Novo valor"
-            />
+            <label className="block mb-3">
+              <span className={fieldLabelClass}>Novo valor</span>
+              <input
+                type="tel"
+                inputMode="decimal"
+                value={editValue}
+                onChange={(e) =>
+                  setEditValue(formatCurrencyTyping(e.target.value))
+                }
+                className="w-full p-2 bg-zinc-800 rounded"
+                placeholder="Novo valor"
+              />
+            </label>
 
             <div className="flex justify-between gap-2">
               <button
@@ -760,16 +1278,19 @@ export default function DashboardPage() {
               {expectedAccount?.name}
             </p>
 
-            <input
-              type="tel"
-              inputMode="decimal"
-              value={expectedValue}
-              onChange={(e) =>
-                setExpectedValue(formatCurrencyTyping(e.target.value))
-              }
-              className="w-full p-2 bg-zinc-800 rounded mb-3"
-              placeholder="Valor previsto"
-            />
+            <label className="block mb-3">
+              <span className={fieldLabelClass}>Valor previsto</span>
+              <input
+                type="tel"
+                inputMode="decimal"
+                value={expectedValue}
+                onChange={(e) =>
+                  setExpectedValue(formatCurrencyTyping(e.target.value))
+                }
+                className="w-full p-2 bg-zinc-800 rounded"
+                placeholder="Valor previsto"
+              />
+            </label>
 
             <div className="flex justify-between gap-2">
               <button
@@ -883,9 +1404,12 @@ export default function DashboardPage() {
                   }
                   className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 outline-none"
                 >
-                  <option value="matheus">Matheus</option>
-                  <option value="giovana">Giovana</option>
-                  <option value="all">Todos</option>
+                  <option value={ALL_LAUNCHERS}>Todos</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {getMemberLabel(member)}
+                    </option>
+                  ))}
                 </select>
 
                 <button
@@ -964,17 +1488,20 @@ export default function DashboardPage() {
               {getTransactionLauncher(pixEditingTransaction)}
             </p>
 
-            <input
-              type="tel"
-              inputMode="decimal"
-              value={pixEditValue}
-              onChange={(event) =>
-                setPixEditValue(formatCurrencyTyping(event.target.value))
-              }
-              className="w-full p-2 bg-zinc-800 rounded mb-3"
-              placeholder="Novo valor"
-              autoFocus
-            />
+            <label className="block mb-3">
+              <span className={fieldLabelClass}>Novo valor</span>
+              <input
+                type="tel"
+                inputMode="decimal"
+                value={pixEditValue}
+                onChange={(event) =>
+                  setPixEditValue(formatCurrencyTyping(event.target.value))
+                }
+                className="w-full p-2 bg-zinc-800 rounded"
+                placeholder="Novo valor"
+                autoFocus
+              />
+            </label>
 
             <div className="flex justify-between gap-2">
               <button
@@ -1036,7 +1563,8 @@ export default function DashboardPage() {
         setAccounts={setAccounts}
         setTransactions={setTransactions}
         onMonthsChanged={async () => {
-          const refreshed = await getAllMonths();
+          if (!groupId) return;
+          const refreshed = await getAllMonths(groupId);
           setMonths(refreshed);
         }}
       />
@@ -1056,6 +1584,7 @@ export default function DashboardPage() {
         onClose={() => setDetailsAccount(null)}
         monthId={monthId}
         account={detailsAccount}
+        accounts={accounts}
         setAccounts={setAccounts}
       />
     </div>

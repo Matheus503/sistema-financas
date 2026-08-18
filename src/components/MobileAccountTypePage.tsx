@@ -2,16 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Eye, EyeOff, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Menu, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { auth } from "../lib/auth";
 import { getAllMonths } from "../services/monthService";
 import {
+  deleteCurrentUserAccount,
+  ensureUserProfile,
+  getGroupMembers,
+  type GroupMemberListItem,
+} from "../services/userService";
+import {
   deleteAccount,
   formatAccountNameWithDueDay,
   getAccountsByMonth,
   isCalculatedAccount,
+  isCreditCardAccount,
   isPixAccount,
   toggleAccountPaid,
   updateAccountValue,
@@ -24,6 +31,7 @@ import {
 } from "../services/transactionService";
 import CreateAccountModal from "./CreateAccountModal";
 import EditAccountModal from "./EditAccountModal";
+import LaunchModal from "./LaunchModal";
 
 type Props = {
   accountType: "CREDIT" | "FIXED" | "VARIABLE";
@@ -34,7 +42,9 @@ type Props = {
   deletedMessage: string;
 };
 
-type LauncherFilter = "matheus" | "giovana" | "all";
+const ALL_LAUNCHERS = "all";
+
+type LauncherFilter = string;
 
 const monthName = (month: number) =>
   [
@@ -52,14 +62,6 @@ const monthName = (month: number) =>
     "Dez",
   ][month - 1];
 
-const isMatheus = () => {
-  const raw = `${auth.currentUser?.displayName || ""} ${
-    auth.currentUser?.email || ""
-  }`.toLowerCase();
-
-  return raw.includes("matheus");
-};
-
 export default function MobileAccountTypePage({
   accountType,
   title,
@@ -69,14 +71,24 @@ export default function MobileAccountTypePage({
   deletedMessage,
 }: Props) {
   const router = useRouter();
+  const fieldLabelClass = "mb-1 block text-xs font-semibold text-zinc-400";
 
+  const [user, setUser] = useState<any>(null);
+  const [groupId, setGroupId] = useState("");
   const [months, setMonths] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [monthId, setMonthId] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [members, setMembers] = useState<GroupMemberListItem[]>([]);
   const [showValues, setShowValues] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showLaunch, setShowLaunch] = useState(false);
+  const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMoreOptionsModal, setShowMoreOptionsModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [editAccount, setEditAccount] = useState<FinanceAccount | null>(null);
   const [editValue, setEditValue] = useState("");
   const [detailsAccount, setDetailsAccount] = useState<FinanceAccount | null>(
@@ -88,7 +100,7 @@ export default function MobileAccountTypePage({
   const [pixEditingId, setPixEditingId] = useState<string | null>(null);
   const [pixEditValue, setPixEditValue] = useState("");
   const [pixLauncherFilter, setPixLauncherFilter] =
-    useState<LauncherFilter>("matheus");
+    useState<LauncherFilter>(ALL_LAUNCHERS);
   const [pixDeletingTransaction, setPixDeletingTransaction] =
     useState<any>(null);
 
@@ -99,6 +111,48 @@ export default function MobileAccountTypePage({
       style: "currency",
       currency: "BRL",
     });
+  };
+
+  const getInitials = (email?: string | null) => {
+    if (!email) return "?";
+
+    const prefix = email.split("@")[0];
+    const parts = prefix.split(/[._-]/g).filter(Boolean);
+
+    if (!parts.length) return prefix.slice(0, 2).toUpperCase();
+
+    return parts
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("");
+  };
+
+  const handleLogout = async () => {
+    await auth.signOut();
+    setShowUserMenu(false);
+    setShowMoreOptionsModal(false);
+    setShowDeleteAccountModal(false);
+    router.push("/");
+  };
+
+  const confirmDeleteAccount = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    setIsDeletingAccount(true);
+
+    try {
+      const currentProfile = await ensureUserProfile(currentUser);
+      await deleteCurrentUserAccount(currentProfile);
+      await auth.signOut();
+      router.push("/");
+      toast.success("Conta excluida com sucesso.");
+    } catch (error) {
+      console.error("Erro ao excluir conta:", error);
+      toast.error("Nao foi possivel excluir a conta.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   const parseCurrency = (value: string) => {
@@ -141,13 +195,20 @@ export default function MobileAccountTypePage({
         return;
       }
 
-      if (!isMatheus()) {
-        router.push("/mobile");
+      setUser(user);
+
+      const profile = await ensureUserProfile(user);
+      setGroupId(profile.groupId);
+      setPixLauncherFilter(user.uid || ALL_LAUNCHERS);
+
+      const [all, groupMembers] = await Promise.all([
+        getAllMonths(profile.groupId),
+        getGroupMembers(profile.groupId),
+      ]);
+      setMembers(groupMembers);
+      if (!all || all.length === 0) {
         return;
       }
-
-      const all = await getAllMonths();
-      if (!all || all.length === 0) return;
 
       const lastIndex = all.length - 1;
       setMonths(all);
@@ -164,7 +225,7 @@ export default function MobileAccountTypePage({
   const getAccountValue = (account: FinanceAccount) => {
     const baseValue = Number(account.value || 0);
 
-    if (!String(account.name || "").includes("Nubank")) {
+    if (!isCreditCardAccount(account)) {
       return baseValue;
     }
 
@@ -197,17 +258,56 @@ export default function MobileAccountTypePage({
   const pixTransactions = transactions.filter(
     (transaction) => transaction.accountId === pixAccount?.id
   );
+  const normalizeText = (value: string) =>
+    String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  const getMemberLabel = (member: GroupMemberListItem) =>
+    member.name || member.email.split("@")[0] || "Sem nome";
+  const transactionMatchesMember = (
+    transaction: any,
+    member: GroupMemberListItem
+  ) => {
+    const launcherId = transaction.launcherId || transaction.userId || "";
+
+    if (member.status === "active" && launcherId && launcherId === member.id) {
+      return true;
+    }
+
+    const rawLauncher = normalizeText(
+      `${transaction.launcherName || ""} ${transaction.userName || ""} ${
+        transaction.userEmail || ""
+      }`
+    );
+    const memberName = normalizeText(member.name);
+    const memberEmail = normalizeText(member.email);
+    const memberEmailPrefix = normalizeText(member.email.split("@")[0] || "");
+
+    return Boolean(
+      rawLauncher &&
+        ((memberName && rawLauncher.includes(memberName)) ||
+          (memberEmail && rawLauncher.includes(memberEmail)) ||
+          (memberEmailPrefix && rawLauncher.includes(memberEmailPrefix)))
+    );
+  };
   const pixFilteredTransactions = pixTransactions.filter((transaction) => {
-    if (pixLauncherFilter === "all") return true;
+    if (pixLauncherFilter === ALL_LAUNCHERS) return true;
 
-    const raw = `${
-      transaction.launcherName ||
-      transaction.userName ||
-      transaction.userEmail ||
-      ""
-    }`.toLowerCase();
+    const selectedMember = members.find(
+      (member) => member.id === pixLauncherFilter
+    );
 
-    return raw.includes(pixLauncherFilter);
+    if (selectedMember) return transactionMatchesMember(transaction, selectedMember);
+
+    const raw = normalizeText(
+      `${transaction.launcherName || ""} ${transaction.userName || ""} ${
+        transaction.userEmail || ""
+      }`
+    );
+
+    return raw.includes(normalizeText(pixLauncherFilter));
   });
   const pixEditingTransaction = pixTransactions.find(
     (transaction) => transaction.id === pixEditingId
@@ -385,17 +485,176 @@ export default function MobileAccountTypePage({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 py-6 flex flex-col gap-5">
-      <div className="relative flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 pt-20 pb-24 flex flex-col gap-5">
+      {isSideMenuOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          <button
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setIsSideMenuOpen(false)}
+            type="button"
+            aria-label="Fechar menu"
+          />
+
+          <aside className="relative h-full w-72 max-w-[80vw] bg-zinc-950 border-r border-zinc-800 p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="font-semibold">Menu</h2>
+
+              <button
+                onClick={() => setIsSideMenuOpen(false)}
+                type="button"
+                aria-label="Fechar menu"
+                className="rounded-full bg-zinc-900 p-2 text-zinc-300"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <nav className="flex flex-col gap-2">
+              {[
+                { label: "Início", href: "/mobile" },
+                { label: "Créditos", href: "/mobile/creditos" },
+                { label: "Contas Fixas", href: "/mobile/fixas" },
+                { label: "Contas Variáveis", href: "/mobile/variaveis" },
+              ].map((item) => (
+                <button
+                  key={item.href}
+                  type="button"
+                  onClick={() => {
+                    setIsSideMenuOpen(false);
+                    router.push(item.href);
+                  }}
+                  className="w-full rounded-xl bg-zinc-900 px-4 py-3 text-left text-sm font-medium text-zinc-100 border border-zinc-800"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </aside>
+        </div>
+      )}
+
+      <button
+        onClick={() => setIsSideMenuOpen(true)}
+        type="button"
+        aria-label="Abrir menu"
+        className="fixed left-4 top-6 z-40 rounded-full bg-zinc-900 p-2 text-zinc-200 border border-zinc-800 shadow-lg"
+      >
+        <Menu size={20} />
+      </button>
+
+      <div className="fixed right-4 top-6 z-40">
         <button
-          onClick={() => router.push("/mobile")}
+          onClick={() => setShowUserMenu((prev) => !prev)}
+          className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center shadow-lg overflow-hidden border border-purple-400/20"
           type="button"
-          aria-label="Voltar"
-          className="absolute left-0 rounded-full bg-zinc-900 p-2 text-zinc-200 border border-zinc-800"
+          aria-label="Abrir menu do usuario"
         >
-          <ArrowLeft size={20} />
+          {user?.photoURL ? (
+            <img
+              src={user.photoURL}
+              alt="Foto do usuario"
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="font-bold text-sm">{getInitials(user?.email)}</span>
+          )}
         </button>
 
+        {showUserMenu && (
+          <div className="absolute right-0 mt-2 min-w-32 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 z-50">
+            <button
+              onClick={() => {
+                setShowUserMenu(false);
+                setShowMoreOptionsModal(true);
+              }}
+              className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+              type="button"
+            >
+              Mais opções
+            </button>
+
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+              type="button"
+            >
+              Sair
+            </button>
+          </div>
+        )}
+      </div>
+
+      {showMoreOptionsModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-bold">Mais opções</h2>
+
+              <button
+                onClick={() => setShowMoreOptionsModal(false)}
+                className="bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-lg text-sm"
+                type="button"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowMoreOptionsModal(false);
+                setShowDeleteAccountModal(true);
+              }}
+              className="w-full bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition"
+              type="button"
+            >
+              Excluir conta
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDeleteAccountModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5">
+            <h2 className="text-lg font-bold mb-3">
+              Excluir conta permanentemente
+            </h2>
+
+            <p className="text-sm text-zinc-400">
+              Esta ação excluirá permanentemente sua conta do sistema financeiro.
+              Se você for administrador de um grupo, todos os dados desse grupo
+              serão apagados, incluindo meses, contas, lançamentos, categorias,
+              convites e membros. Esta ação não pode ser desfeita.
+            </p>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={confirmDeleteAccount}
+                disabled={isDeletingAccount}
+                type="button"
+                autoFocus
+              >
+                {isDeletingAccount ? "Excluindo..." : "Excluir conta"}
+              </button>
+
+              <button
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (isDeletingAccount) return;
+                  setShowDeleteAccountModal(false);
+                }}
+                disabled={isDeletingAccount}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="relative flex items-center justify-center">
         <div className="flex items-center gap-4 bg-zinc-900 px-5 py-2 rounded-full">
           <button onClick={goPrev} type="button">
             ←
@@ -461,7 +720,13 @@ export default function MobileAccountTypePage({
                 <button
                   onClick={(event) => {
                     event.stopPropagation();
-                    if (isCalculatedAccount(account)) return;
+                    if (
+                      isCalculatedAccount(account) &&
+                      !isCreditCardAccount(account) &&
+                      !isPixAccount(account)
+                    ) {
+                      return;
+                    }
                     setDetailsAccount(account);
                   }}
                   type="button"
@@ -502,6 +767,15 @@ export default function MobileAccountTypePage({
         </div>
       </div>
 
+      <button
+        className="fixed bottom-6 right-6 z-40 bg-purple-600 w-16 h-16 rounded-full text-3xl shadow-lg"
+        onClick={() => setShowLaunch(true)}
+        type="button"
+        aria-label="Novo lançamento"
+      >
+        +
+      </button>
+
       {pixAccount && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
           <div className="bg-zinc-900 p-4 rounded-2xl w-full max-w-sm border border-zinc-800">
@@ -521,9 +795,12 @@ export default function MobileAccountTypePage({
                   }
                   className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-zinc-200 outline-none"
                 >
-                  <option value="matheus">Matheus</option>
-                  <option value="giovana">Giovana</option>
-                  <option value="all">Todos</option>
+                  <option value={ALL_LAUNCHERS}>Todos</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {getMemberLabel(member)}
+                    </option>
+                  ))}
                 </select>
 
                 <button
@@ -603,17 +880,20 @@ export default function MobileAccountTypePage({
               {getTransactionLauncher(pixEditingTransaction)}
             </p>
 
-            <input
-              type="tel"
-              inputMode="decimal"
-              value={pixEditValue}
-              onChange={(event) =>
-                setPixEditValue(formatCurrencyTyping(event.target.value))
-              }
-              className="w-full bg-zinc-800 rounded-xl p-3 outline-none"
-              placeholder="Novo valor"
-              autoFocus
-            />
+            <label className="block">
+              <span className={fieldLabelClass}>Novo valor</span>
+              <input
+                type="tel"
+                inputMode="decimal"
+                value={pixEditValue}
+                onChange={(event) =>
+                  setPixEditValue(formatCurrencyTyping(event.target.value))
+                }
+                className="w-full bg-zinc-800 rounded-xl p-3 outline-none"
+                placeholder="Novo valor"
+                autoFocus
+              />
+            </label>
 
             <div className="flex gap-2 mt-4">
               <button
@@ -677,15 +957,19 @@ export default function MobileAccountTypePage({
           >
             <h2 className="text-lg font-bold mb-4">Editar valor</h2>
 
-            <input
-              type="tel"
-              inputMode="decimal"
-              value={editValue}
-              onChange={(event) =>
-                setEditValue(formatCurrencyTyping(event.target.value))
-              }
-              className="w-full bg-zinc-800 rounded-xl p-3 outline-none"
-            />
+            <label className="block">
+              <span className={fieldLabelClass}>Novo valor</span>
+              <input
+                type="tel"
+                inputMode="decimal"
+                value={editValue}
+                onChange={(event) =>
+                  setEditValue(formatCurrencyTyping(event.target.value))
+                }
+                className="w-full bg-zinc-800 rounded-xl p-3 outline-none"
+                placeholder="Novo valor"
+              />
+            </label>
 
             <div className="flex gap-2 mt-4">
               <button
@@ -750,11 +1034,37 @@ export default function MobileAccountTypePage({
         setAccounts={setAccounts}
       />
 
+      <LaunchModal
+        open={showLaunch}
+        onClose={() => setShowLaunch(false)}
+        monthId={monthId}
+        accounts={accounts}
+        setAccounts={setAccounts}
+        setTransactions={setTransactions}
+        onMonthsChanged={async (targetMonthId) => {
+          if (!groupId) return;
+
+          const refreshed = await getAllMonths(groupId);
+          setMonths(refreshed);
+
+          const targetIndex = refreshed.findIndex(
+            (month: any) => month.id === targetMonthId
+          );
+
+          if (targetIndex >= 0) {
+            setCurrentIndex(targetIndex);
+            setMonthId(targetMonthId);
+            await loadData(targetMonthId);
+          }
+        }}
+      />
+
       <EditAccountModal
         open={Boolean(detailsAccount)}
         onClose={() => setDetailsAccount(null)}
         monthId={monthId}
         account={detailsAccount}
+        accounts={accounts}
         setAccounts={setAccounts}
       />
     </div>
