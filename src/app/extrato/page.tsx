@@ -106,7 +106,11 @@ function ExtratoContent() {
   const [monthTitle, setMonthTitle] = useState("Extrato de cartão");
   const [showLaunchModal, setShowLaunchModal] = useState(false);
 
-  const [filterDate, setFilterDate] = useState("");
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
+  const [showDateRangePicker, setShowDateRangePicker] = useState(false);
+  const [rangeHoverDate, setRangeHoverDate] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [filterCategory, setFilterCategory] = useState("");
   const [filterLauncher, setFilterLauncher] = useState(ALL_LAUNCHERS);
   const [filterCreditCard, setFilterCreditCard] = useState(ALL_CREDIT_CARDS);
@@ -219,6 +223,155 @@ function ExtratoContent() {
     const day = String(date.getDate()).padStart(2, "0");
 
     return `${year}-${month}-${day}`;
+  };
+
+  const getDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+
+  const parseDateKey = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  const formatDateLabel = (value: string) => {
+    const date = parseDateKey(value);
+    if (!date) return "";
+
+    return date.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  const getDateRangeLabel = () => {
+    if (filterStartDate && filterEndDate) {
+      return `${formatDateLabel(filterStartDate)} - ${formatDateLabel(
+        filterEndDate
+      )}`;
+    }
+
+    if (filterStartDate) return `${formatDateLabel(filterStartDate)} - ...`;
+
+    return "Selecionar período";
+  };
+
+  const addCalendarMonths = (date: Date, amount: number) =>
+    new Date(date.getFullYear(), date.getMonth() + amount, 1);
+
+  const getCalendarDays = (monthDate: Date) => {
+    const firstDayOfMonth = new Date(
+      monthDate.getFullYear(),
+      monthDate.getMonth(),
+      1
+    );
+    const startDate = new Date(firstDayOfMonth);
+    startDate.setDate(firstDayOfMonth.getDate() - firstDayOfMonth.getDay());
+
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + index);
+
+      return {
+        date,
+        key: getDateKey(date),
+        day: date.getDate(),
+        isCurrentMonth: date.getMonth() === monthDate.getMonth(),
+      };
+    });
+  };
+
+  const isDateInRange = (dateKey: string) => {
+    const endDate = filterEndDate || rangeHoverDate;
+
+    if (!filterStartDate || !endDate) return false;
+
+    const start = filterStartDate < endDate ? filterStartDate : endDate;
+    const end = filterStartDate < endDate ? endDate : filterStartDate;
+
+    return dateKey >= start && dateKey <= end;
+  };
+
+  const selectRangeDate = (dateKey: string) => {
+    if (!filterStartDate || filterEndDate) {
+      setFilterStartDate(dateKey);
+      setFilterEndDate("");
+      setRangeHoverDate("");
+      return;
+    }
+
+    if (dateKey < filterStartDate) {
+      setFilterEndDate(filterStartDate);
+      setFilterStartDate(dateKey);
+    } else {
+      setFilterEndDate(dateKey);
+    }
+
+    setRangeHoverDate("");
+    setShowDateRangePicker(false);
+  };
+
+  const clearDateRange = () => {
+    setFilterStartDate("");
+    setFilterEndDate("");
+    setRangeHoverDate("");
+  };
+
+  const renderCalendarMonth = (monthDate: Date) => {
+    const monthLabel = monthDate.toLocaleDateString("pt-BR", {
+      month: "long",
+      year: "numeric",
+    });
+    const weekDays = ["D", "S", "T", "Q", "Q", "S", "S"];
+
+    return (
+      <div className="min-w-0">
+        <div className="mb-3 text-center text-sm font-semibold capitalize">
+          {monthLabel}
+        </div>
+
+        <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-zinc-500 mb-1">
+          {weekDays.map((day, index) => (
+            <div key={`${day}-${index}`}>{day}</div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-1">
+          {getCalendarDays(monthDate).map((item) => {
+            const isSelected =
+              item.key === filterStartDate || item.key === filterEndDate;
+            const isInRange = isDateInRange(item.key);
+
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => selectRangeDate(item.key)}
+                onMouseEnter={() => setRangeHoverDate(item.key)}
+                className={`h-9 rounded-lg text-sm transition ${
+                  isSelected
+                    ? "bg-purple-600 text-white font-bold"
+                    : isInRange
+                    ? "bg-purple-600/20 text-purple-100"
+                    : item.isCurrentMonth
+                    ? "text-zinc-100 hover:bg-zinc-800"
+                    : "text-zinc-600 hover:bg-zinc-800/60"
+                }`}
+              >
+                {item.day}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
 
   const loadExtrato = useCallback(async () => {
@@ -344,9 +497,12 @@ function ExtratoContent() {
         return false;
       }
 
-      if (filterDate) {
+      if (filterStartDate || filterEndDate) {
         const itemDateKey = normalizeDateKey(item.date);
-        if (itemDateKey !== filterDate) return false;
+        if (!itemDateKey) return false;
+
+        if (filterStartDate && itemDateKey < filterStartDate) return false;
+        if (filterEndDate && itemDateKey > filterEndDate) return false;
       }
 
       if (filterCategory) {
@@ -363,7 +519,8 @@ function ExtratoContent() {
   }, [
     allItems,
     filterCreditCard,
-    filterDate,
+    filterStartDate,
+    filterEndDate,
     filterCategory,
     filterLauncher,
     groupMembers,
@@ -548,15 +705,89 @@ function ExtratoContent() {
       </div>
 
       <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 mb-6">
-        <div className="grid gap-3 md:grid-cols-[180px_1fr_1fr_240px_160px] items-end">
-          <div>
-            <label className="block text-xs text-zinc-400 mb-2">Data</label>
-            <input
-              type="date"
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              className="w-full bg-zinc-800 p-2 rounded-lg outline-none"
-            />
+        <div className="grid gap-3 md:grid-cols-[240px_1fr_1fr_240px_160px] items-end">
+          <div className="relative">
+            <label className="block text-xs text-zinc-400 mb-2">Período</label>
+            <button
+              type="button"
+              onClick={() => setShowDateRangePicker((prev) => !prev)}
+              className="w-full bg-zinc-800 hover:bg-zinc-700 p-2 rounded-lg outline-none text-left transition"
+            >
+              {getDateRangeLabel()}
+            </button>
+
+            {showDateRangePicker && (
+              <div className="absolute left-0 top-[74px] z-50 w-[min(92vw,640px)] rounded-2xl border border-zinc-700 bg-zinc-900 p-4 shadow-2xl">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCalendarMonth((current) =>
+                        addCalendarMonths(current, -1)
+                      )
+                    }
+                    className="rounded-lg bg-zinc-800 px-3 py-2 hover:bg-zinc-700"
+                    aria-label="Mês anterior"
+                  >
+                    ←
+                  </button>
+
+                  <div className="text-xs text-zinc-400">
+                    {filterStartDate && !filterEndDate
+                      ? "Selecione a data final"
+                      : "Selecione a data inicial"}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCalendarMonth((current) =>
+                        addCalendarMonths(current, 1)
+                      )
+                    }
+                    className="rounded-lg bg-zinc-800 px-3 py-2 hover:bg-zinc-700"
+                    aria-label="Próximo mês"
+                  >
+                    →
+                  </button>
+                </div>
+
+                <div className="grid gap-5 md:grid-cols-2">
+                  {renderCalendarMonth(calendarMonth)}
+                  {renderCalendarMonth(addCalendarMonths(calendarMonth, 1))}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between gap-3 border-t border-zinc-800 pt-4">
+                  <div className="text-xs text-zinc-400">
+                    {filterStartDate
+                      ? `${formatDateLabel(filterStartDate)}${
+                          filterEndDate
+                            ? ` - ${formatDateLabel(filterEndDate)}`
+                            : ""
+                        }`
+                      : "Nenhum período selecionado"}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={clearDateRange}
+                      className="rounded-lg bg-zinc-800 px-3 py-2 text-sm hover:bg-zinc-700"
+                    >
+                      Limpar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowDateRangePicker(false)}
+                      className="rounded-lg bg-purple-600 px-3 py-2 text-sm font-semibold hover:bg-purple-700"
+                    >
+                      Aplicar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
@@ -613,10 +844,11 @@ function ExtratoContent() {
 
           <button
             onClick={() => {
-              setFilterDate("");
+              clearDateRange();
               setFilterCategory("");
               setFilterCreditCard(ALL_CREDIT_CARDS);
               setFilterLauncher(currentUserId || ALL_LAUNCHERS);
+              setShowDateRangePicker(false);
             }}
             className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded-xl h-[42px]"
             type="button"
@@ -627,7 +859,9 @@ function ExtratoContent() {
 
         <div className="mt-3 text-xs text-zinc-500">
           Fatura: {monthTitle} - {getSelectedCreditCardLabel()}
-          {filterDate ? ` • Data: ${filterDate}` : ""}
+          {filterStartDate || filterEndDate
+            ? ` • Período: ${getDateRangeLabel()}`
+            : ""}
           {filterCategory ? ` • Categoria: ${filterCategory}` : ""}
           {` • ${getSelectedLauncherLabel()}`}
         </div>
