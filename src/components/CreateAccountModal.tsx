@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createAccount } from "../services/accountService";
 import type { FinanceAccount } from "../services/accountService";
+import SwitchControl from "./SwitchControl";
 
 type Props = {
   open: boolean;
@@ -219,22 +220,19 @@ export default function CreateAccountModal({
         </label>
 
         {type === "VARIABLE" && (
-          <label className="mb-3 flex items-center gap-3 rounded bg-zinc-800/70 px-3 py-2 text-sm text-zinc-200">
-            <input
-              type="checkbox"
+          <div className="mb-3">
+            <SwitchControl
               checked={isCreditCard}
-              onChange={(event) => {
-                const checked = event.target.checked;
+              label="Cartão de crédito"
+              onChange={(checked) => {
                 setIsCreditCard(checked);
 
                 if (!checked) {
                   setClosingDay("");
                 }
               }}
-              className="h-4 w-4 accent-purple-600"
             />
-            <span>Cartão de crédito</span>
-          </label>
+          </div>
         )}
 
         {!isCreditCard && (

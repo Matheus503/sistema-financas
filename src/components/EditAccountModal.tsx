@@ -10,6 +10,7 @@ import {
   isPixAccount,
   updateAccountDetails,
 } from "../services/accountService";
+import SwitchControl from "./SwitchControl";
 
 type Props = {
   open: boolean;
@@ -398,27 +399,17 @@ function EditAccountForm({
 
         {isCreditCard && (
           <div className="mb-4 grid grid-cols-2 gap-2">
-            <label className="flex items-center gap-3 rounded bg-zinc-800/70 px-3 py-2 text-sm text-zinc-200">
-              <input
-                type="checkbox"
-                checked={isArchived}
-                onChange={(event) => setIsArchived(event.target.checked)}
-                className="h-4 w-4 accent-purple-600"
-              />
-              <span>Arquivar</span>
-            </label>
+            <SwitchControl
+              checked={isPrimaryCreditCard}
+              label="Principal"
+              onChange={setIsPrimaryCreditCard}
+            />
 
-            <label className="flex items-center gap-3 rounded bg-zinc-800/70 px-3 py-2 text-sm text-zinc-200">
-              <input
-                type="checkbox"
-                checked={isPrimaryCreditCard}
-                onChange={(event) =>
-                  setIsPrimaryCreditCard(event.target.checked)
-                }
-                className="h-4 w-4 accent-purple-600"
-              />
-              <span>Principal</span>
-            </label>
+            <SwitchControl
+              checked={isArchived}
+              label="Arquivar"
+              onChange={setIsArchived}
+            />
           </div>
         )}
 
