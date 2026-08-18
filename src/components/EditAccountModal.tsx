@@ -451,9 +451,13 @@ function EditAccountForm({
           <div className="bg-zinc-900 p-6 rounded-xl w-full max-w-sm border border-zinc-800">
             <h2 className="mb-2 text-lg font-bold">Alterar cartão principal?</h2>
 
-            <p className="text-sm text-zinc-400 mb-5">
-              Já existe um cartão principal. Deseja alterar para este cartão?
-            </p>
+            <div className="space-y-2 text-sm text-zinc-400 mb-5">
+              <p>Já existe outro cartão marcado como principal.</p>
+              <p>
+                Ao confirmar, este cartão passará a ser o principal para novos
+                lançamentos e cálculos do saldo previsto.
+              </p>
+            </div>
 
             <div className="flex justify-between gap-2">
               <button
@@ -465,7 +469,7 @@ function EditAccountForm({
                 type="button"
                 autoFocus
               >
-                Sim
+                Alterar
               </button>
 
               <button
