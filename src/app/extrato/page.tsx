@@ -21,8 +21,13 @@ import {
   getTransactions,
   updateTransaction,
 } from "../../services/transactionService";
+import {
+  anticipateInstallmentPurchase,
+  cancelInstallmentPurchaseFromInstallment,
+} from "../../services/installmentPurchaseService";
 import TransactionList from "../../components/TransactionList";
 import LaunchModal from "../../components/LaunchModal";
+import SwitchControl from "../../components/SwitchControl";
 import type { FinanceAccount } from "../../services/accountService";
 
 type MonthDoc = {
@@ -42,6 +47,10 @@ type Transaction = {
   userName?: string;
   launcherId?: string;
   launcherName?: string;
+  installmentGroupId?: string;
+  installmentCurrent?: number;
+  installmentTotal?: number;
+  transactionType?: string;
 };
 
 type ExtratoItem = {
@@ -60,6 +69,10 @@ type ExtratoItem = {
   userName?: string;
   launcherId?: string;
   launcherName?: string;
+  installmentGroupId?: string;
+  installmentCurrent?: number;
+  installmentTotal?: number;
+  transactionType?: string;
 };
 
 type TransactionGroup = {
@@ -95,6 +108,7 @@ function ExtratoContent() {
   const [showValues, setShowValues] = useState(true);
 
   const [currentUserId, setCurrentUserId] = useState("");
+  const [groupId, setGroupId] = useState("");
   const [groupMembers, setGroupMembers] = useState<GroupMemberListItem[]>([]);
 
   const [allItems, setAllItems] = useState<ExtratoItem[]>([]);
@@ -118,6 +132,9 @@ function ExtratoContent() {
   const [showEdit, setShowEdit] = useState(false);
   const [editItem, setEditItem] = useState<ExtratoItem | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [anticipateInstallments, setAnticipateInstallments] = useState(false);
+  const [anticipationInstallments, setAnticipationInstallments] = useState("");
+  const [anticipationPaidValue, setAnticipationPaidValue] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [showDelete, setShowDelete] = useState(false);
@@ -145,6 +162,12 @@ function ExtratoContent() {
       maximumFractionDigits: 2,
     });
   };
+
+  const stripInstallmentSuffix = (value: string) =>
+    String(value || "")
+      .replace(/\s*\(\d+\/\d+\)\s*$/, "")
+      .replace(/\s-\s\d+\/\d+\s*$/, "")
+      .trim();
 
   const formatMonthLabel = (month: number, year: number) =>
     `Fatura ${String(month).padStart(2, "0")}/${year}`;
@@ -175,6 +198,15 @@ function ExtratoContent() {
 
     const card = creditCardAccounts.find((item) => item.id === filterCreditCard);
     return card?.name || "Cartão";
+  };
+
+  const closeEdit = () => {
+    setShowEdit(false);
+    setEditItem(null);
+    setEditValue("");
+    setAnticipateInstallments(false);
+    setAnticipationInstallments("");
+    setAnticipationPaidValue("");
   };
 
   const itemMatchesMember = (
@@ -385,6 +417,7 @@ function ExtratoContent() {
 
     try {
       const profile = await ensureUserProfile(user);
+      setGroupId(profile.groupId);
       const [months, members] = await Promise.all([
         getAllMonths(profile.groupId) as Promise<MonthDoc[]>,
         getGroupMembers(profile.groupId),
@@ -455,6 +488,16 @@ function ExtratoContent() {
           userName: t.userName ? String(t.userName) : "",
           launcherId: t.launcherId ? String(t.launcherId) : "",
           launcherName: t.launcherName ? String(t.launcherName) : "",
+          installmentGroupId: t.installmentGroupId
+            ? String(t.installmentGroupId)
+            : "",
+          installmentCurrent: t.installmentCurrent
+            ? Number(t.installmentCurrent)
+            : undefined,
+          installmentTotal: t.installmentTotal
+            ? Number(t.installmentTotal)
+            : undefined,
+          transactionType: t.transactionType ? String(t.transactionType) : "",
         });
       }
 
@@ -546,8 +589,30 @@ function ExtratoContent() {
   const openEdit = (item: ExtratoItem) => {
     setEditItem(item);
     setEditValue(formatCurrencyInput(Number(item.value ?? 0)));
+    setAnticipateInstallments(false);
+    setAnticipationInstallments("");
+    setAnticipationPaidValue("");
     setShowEdit(true);
   };
+
+  const editRemainingInstallments =
+    editItem?.installmentTotal && editItem?.installmentCurrent
+      ? Math.max(editItem.installmentTotal - editItem.installmentCurrent, 0)
+      : 0;
+  const parsedAnticipationInstallments = anticipationInstallments
+    ? Number(anticipationInstallments)
+    : 0;
+  const anticipationOriginalAmount =
+    editItem && parsedAnticipationInstallments > 0
+      ? Number(editItem.value || 0) * parsedAnticipationInstallments
+      : 0;
+  const anticipationPaidAmount = parseCurrency(anticipationPaidValue);
+  const anticipationDiscountAmount = Math.max(
+    anticipationOriginalAmount - anticipationPaidAmount,
+    0
+  );
+  const canAnticipateEditItem =
+    Boolean(editItem?.installmentGroupId) && editRemainingInstallments > 0;
 
   const saveEdit = async () => {
     if (!editItem || !editItem.monthId || !editItem.transactionId) return;
@@ -555,17 +620,79 @@ function ExtratoContent() {
     const parsed = parseCurrency(editValue);
     if (Number.isNaN(parsed)) return;
 
+    if (anticipateInstallments) {
+      if (!groupId || !editItem.accountId || !editItem.installmentGroupId) {
+        toast.error("Nao foi possivel identificar a compra parcelada.");
+        return;
+      }
+
+      if (
+        !Number.isInteger(parsedAnticipationInstallments) ||
+        parsedAnticipationInstallments < 1 ||
+        parsedAnticipationInstallments > editRemainingInstallments
+      ) {
+        toast.error("Informe uma quantidade valida de parcelas para antecipar.");
+        return;
+      }
+
+      if (
+        !Number.isFinite(anticipationPaidAmount) ||
+        anticipationPaidAmount <= 0
+      ) {
+        toast.error("Informe o valor cobrado pelo banco.");
+        return;
+      }
+
+      if (anticipationPaidAmount > anticipationOriginalAmount) {
+        toast.error("O valor cobrado nao pode ser maior que o valor original.");
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       await updateTransaction(editItem.monthId, editItem.transactionId, {
         value: parsed,
       });
 
+      if (anticipateInstallments) {
+        const userId = editItem.launcherId || editItem.userId || currentUserId;
+        const userName = editItem.launcherName || editItem.userName || "";
+
+        await anticipateInstallmentPurchase({
+          groupId,
+          currentMonthId: editItem.monthId,
+          installmentGroupId: String(editItem.installmentGroupId),
+          currentInstallment: Number(editItem.installmentCurrent || 1),
+          installmentsToAnticipate: parsedAnticipationInstallments,
+          originalAmount: anticipationOriginalAmount,
+          paidAmount: anticipationPaidAmount,
+          discountAmount: anticipationDiscountAmount,
+          accountId: String(editItem.accountId),
+          category: editItem.category || "Sem categoria",
+          baseNote: stripInstallmentSuffix(editItem.note || editItem.category || ""),
+          date: editItem.date,
+          userId,
+          userName,
+          launcherId: userId,
+          launcherName: userName,
+        });
+      }
+
       await loadExtrato();
-      setShowEdit(false);
-      setEditItem(null);
-      setEditValue("");
-      toast.success("Lancamento editado com sucesso.");
+      closeEdit();
+      toast.success(
+        anticipateInstallments
+          ? "Antecipação registrada com sucesso."
+          : "Lancamento editado com sucesso."
+      );
+    } catch (error) {
+      console.error("Erro ao editar lançamento:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel editar o lancamento."
+      );
     } finally {
       setSaving(false);
     }
@@ -579,7 +706,21 @@ function ExtratoContent() {
   const confirmDelete = async () => {
     if (!itemToDelete) return;
 
-    await deleteTransaction(itemToDelete.monthId, itemToDelete.transactionId);
+    if (
+      groupId &&
+      itemToDelete.installmentGroupId &&
+      itemToDelete.installmentCurrent
+    ) {
+      await cancelInstallmentPurchaseFromInstallment({
+        groupId,
+        currentMonthId: itemToDelete.monthId,
+        installmentGroupId: itemToDelete.installmentGroupId,
+        currentInstallment: itemToDelete.installmentCurrent,
+      });
+    } else {
+      await deleteTransaction(itemToDelete.monthId, itemToDelete.transactionId);
+    }
+
     await loadExtrato();
 
     setShowDelete(false);
@@ -886,7 +1027,7 @@ function ExtratoContent() {
       {showEdit && editItem && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <form
-            className="bg-zinc-900 p-6 rounded-xl w-80 border border-zinc-800"
+            className="bg-zinc-900 p-6 rounded-xl w-full max-w-md border border-zinc-800"
             onSubmit={(event) => {
               event.preventDefault();
               saveEdit();
@@ -905,6 +1046,94 @@ function ExtratoContent() {
               placeholder="Novo valor"
             />
 
+            {canAnticipateEditItem && (
+              <div className="mb-4 space-y-3 border-t border-zinc-800 pt-3">
+                <SwitchControl
+                  checked={anticipateInstallments}
+                  label="Antecipar parcelas"
+                  onChange={(checked) => {
+                    setAnticipateInstallments(checked);
+
+                    if (checked) {
+                      setAnticipationInstallments(
+                        editRemainingInstallments
+                          ? String(editRemainingInstallments)
+                          : ""
+                      );
+                      setAnticipationPaidValue("");
+                    } else {
+                      setAnticipationInstallments("");
+                      setAnticipationPaidValue("");
+                    }
+                  }}
+                />
+
+                {anticipateInstallments && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2 text-xs text-zinc-400">
+                      <label className="rounded-lg bg-zinc-800/70 p-3">
+                        <span className="block">Antecipar</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={editRemainingInstallments}
+                          step={1}
+                          value={anticipationInstallments}
+                          onChange={(event) =>
+                            setAnticipationInstallments(event.target.value)
+                          }
+                          className="mt-1 w-full bg-transparent p-0 text-sm font-semibold text-purple-300 outline-none"
+                          placeholder="0"
+                        />
+                      </label>
+
+                      <div className="rounded-lg bg-zinc-800/70 p-3">
+                        <div>Atual</div>
+                        <div className="mt-1 text-sm font-semibold text-zinc-100">
+                          {editItem.installmentCurrent}/{editItem.installmentTotal}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-zinc-800/70 p-3">
+                        <div>Restantes</div>
+                        <div className="mt-1 text-sm font-semibold text-zinc-100">
+                          {editRemainingInstallments}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-xs text-zinc-400">
+                      <label className="rounded-lg bg-zinc-800/70 p-3">
+                        <span className="block">Valor pago</span>
+                        <input
+                          value={anticipationPaidValue}
+                          onChange={(event) =>
+                            setAnticipationPaidValue(event.target.value)
+                          }
+                          className="mt-1 w-full bg-transparent p-0 text-sm font-semibold text-zinc-100 outline-none"
+                          placeholder="R$ 0,00"
+                        />
+                      </label>
+
+                      <div className="rounded-lg bg-zinc-800/70 p-3">
+                        <div>Original</div>
+                        <div className="mt-1 text-sm font-semibold text-zinc-100">
+                          {formatMoney(anticipationOriginalAmount)}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-zinc-800/70 p-3">
+                        <div>Desconto</div>
+                        <div className="mt-1 text-sm font-semibold text-emerald-300">
+                          {formatMoney(anticipationDiscountAmount)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-between gap-2">
               <button
                 className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition disabled:opacity-60"
@@ -916,9 +1145,7 @@ function ExtratoContent() {
 
               <button
                 onClick={() => {
-                  setShowEdit(false);
-                  setEditItem(null);
-                  setEditValue("");
+                  closeEdit();
                 }}
                 className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
                 type="button"
@@ -934,8 +1161,18 @@ function ExtratoContent() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-zinc-900 p-6 rounded-xl w-80 text-center border border-zinc-800">
             <h2 className="mb-4 text-lg font-bold">
-              Deseja excluir este lançamento?
+              {itemToDelete.installmentGroupId
+                ? "Excluir compra parcelada?"
+                : "Deseja excluir este lançamento?"}
             </h2>
+
+            {itemToDelete.installmentGroupId && (
+              <p className="mb-5 text-sm text-zinc-400">
+                Este lançamento e as próximas parcelas desta compra serão
+                removidos. Parcelas de meses anteriores serão mantidas no
+                histórico.
+              </p>
+            )}
 
             <div className="flex justify-between gap-2">
               <button

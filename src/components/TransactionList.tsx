@@ -14,6 +14,7 @@ type TransactionItem = {
   userName?: string;
   launcherId?: string;
   launcherName?: string;
+  transactionType?: string;
 };
 
 type TransactionGroup = {
@@ -68,6 +69,12 @@ export default function TransactionList({
             {group.items.map((item) => {
               const hasCategory = item.category?.trim();
               const hasNote = item.note?.trim();
+              const displayCategory =
+                item.transactionType === "installment_anticipation_discount"
+                  ? "Desconto antecipação"
+                  : hasCategory
+                  ? item.category
+                  : "Lançamento";
 
               return (
                 <div
@@ -80,7 +87,7 @@ export default function TransactionList({
 
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate">
-                      {hasCategory ? item.category : "Lançamento"}
+                      {displayCategory}
                     </p>
 
                     {hasNote && (

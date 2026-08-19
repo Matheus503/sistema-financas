@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Menu, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, Menu, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { auth } from "../lib/auth";
 import { getAllMonths } from "../services/monthService";
 import {
+  createGroupAssignment,
+  deleteGroupMember,
   deleteCurrentUserAccount,
   ensureUserProfile,
   getGroupMembers,
@@ -19,6 +21,7 @@ import {
   getAccountsByMonth,
   isCalculatedAccount,
   isCreditCardAccount,
+  isInstallmentAccount,
   isPixAccount,
   toggleAccountPaid,
   updateAccountValue,
@@ -86,6 +89,15 @@ export default function MobileAccountTypePage({
   const [showLaunch, setShowLaunch] = useState(false);
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [memberName, setMemberName] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [isSavingMember, setIsSavingMember] = useState(false);
+  const [memberToDelete, setMemberToDelete] =
+    useState<GroupMemberListItem | null>(null);
+  const [isDeletingMember, setIsDeletingMember] = useState(false);
   const [showMoreOptionsModal, setShowMoreOptionsModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -130,9 +142,111 @@ export default function MobileAccountTypePage({
   const handleLogout = async () => {
     await auth.signOut();
     setShowUserMenu(false);
+    setShowMembersModal(false);
+    setShowAddMemberModal(false);
     setShowMoreOptionsModal(false);
     setShowDeleteAccountModal(false);
     router.push("/");
+  };
+
+  const openMembers = async () => {
+    if (!groupId) return;
+
+    setShowUserMenu(false);
+    setShowMembersModal(true);
+    setIsLoadingMembers(true);
+
+    try {
+      const groupMembers = await getGroupMembers(groupId);
+      setMembers(groupMembers);
+    } catch (error) {
+      console.error("Erro ao carregar membros:", error);
+      toast.error("Nao foi possivel carregar os membros.");
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  };
+
+  const openAddMember = () => {
+    setMemberName("");
+    setMemberEmail("");
+    setShowAddMemberModal(true);
+  };
+
+  const closeAddMember = () => {
+    if (isSavingMember) return;
+
+    setMemberName("");
+    setMemberEmail("");
+    setShowAddMemberModal(false);
+  };
+
+  const saveMember = async () => {
+    const currentUser = auth.currentUser;
+    const normalizedName = memberName.trim();
+    const normalizedEmail = memberEmail.trim().toLowerCase();
+
+    if (!groupId || !currentUser) return;
+
+    if (!normalizedName) {
+      toast.error("Informe o nome do membro.");
+      return;
+    }
+
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      toast.error("Informe um e-mail valido.");
+      return;
+    }
+
+    setIsSavingMember(true);
+
+    try {
+      await createGroupAssignment(
+        normalizedName,
+        normalizedEmail,
+        groupId,
+        currentUser.uid
+      );
+
+      const groupMembers = await getGroupMembers(groupId);
+      setMembers(groupMembers);
+      setMemberName("");
+      setMemberEmail("");
+      setShowAddMemberModal(false);
+      toast.success("Membro cadastrado com sucesso.");
+    } catch (error) {
+      console.error("Erro ao cadastrar membro:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel cadastrar o membro."
+      );
+    } finally {
+      setIsSavingMember(false);
+    }
+  };
+
+  const canDeleteMembers = members.some(
+    (member) => member.id === auth.currentUser?.uid && member.role === "admin"
+  );
+
+  const confirmDeleteMember = async () => {
+    if (!memberToDelete || !groupId) return;
+
+    setIsDeletingMember(true);
+
+    try {
+      await deleteGroupMember(memberToDelete);
+      const groupMembers = await getGroupMembers(groupId);
+      setMembers(groupMembers);
+      setMemberToDelete(null);
+      toast.success("Membro removido com sucesso.");
+    } catch (error) {
+      console.error("Erro ao remover membro:", error);
+      toast.error("Nao foi possivel remover o membro.");
+    } finally {
+      setIsDeletingMember(false);
+    }
   };
 
   const confirmDeleteAccount = async () => {
@@ -484,8 +598,11 @@ export default function MobileAccountTypePage({
     toast.success(deletedMessage);
   };
 
+  const isDeletingInstallmentAccount =
+    isInstallmentAccount(accountToDelete);
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 pt-20 pb-24 flex flex-col gap-5">
+    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 py-6 pb-24 flex flex-col gap-5">
       {isSideMenuOpen && (
         <div className="fixed inset-0 z-50 flex">
           <button
@@ -533,55 +650,81 @@ export default function MobileAccountTypePage({
         </div>
       )}
 
-      <button
-        onClick={() => setIsSideMenuOpen(true)}
-        type="button"
-        aria-label="Abrir menu"
-        className="fixed left-4 top-6 z-40 rounded-full bg-zinc-900 p-2 text-zinc-200 border border-zinc-800 shadow-lg"
-      >
-        <Menu size={20} />
-      </button>
-
-      <div className="fixed right-4 top-6 z-40">
+      <div className="relative flex items-center justify-center">
         <button
-          onClick={() => setShowUserMenu((prev) => !prev)}
-          className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center shadow-lg overflow-hidden border border-purple-400/20"
+          onClick={() => setIsSideMenuOpen(true)}
           type="button"
-          aria-label="Abrir menu do usuario"
+          aria-label="Abrir menu"
+          className="absolute left-0 rounded-full bg-zinc-900 p-2 text-zinc-200 border border-zinc-800 shadow-lg"
         >
-          {user?.photoURL ? (
-            <img
-              src={user.photoURL}
-              alt="Foto do usuario"
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <span className="font-bold text-sm">{getInitials(user?.email)}</span>
-          )}
+          <Menu size={20} />
         </button>
 
-        {showUserMenu && (
-          <div className="absolute right-0 mt-2 min-w-32 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 z-50">
-            <button
-              onClick={() => {
-                setShowUserMenu(false);
-                setShowMoreOptionsModal(true);
-              }}
-              className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
-              type="button"
-            >
-              Mais opções
-            </button>
+        <div className="flex items-center gap-4 bg-zinc-900 px-5 py-2 rounded-full">
+          <button onClick={goPrev} type="button">
+            ←
+          </button>
 
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
-              type="button"
-            >
-              Sair
-            </button>
-          </div>
-        )}
+          <span>
+            {currentMonth
+              ? `${monthName(currentMonth.month)} ${currentMonth.year}`
+              : ""}
+          </span>
+
+          <button onClick={goNext} type="button">
+            →
+          </button>
+        </div>
+
+        <div className="absolute right-0">
+          <button
+            onClick={() => setShowUserMenu((prev) => !prev)}
+            className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center shadow-lg overflow-hidden border border-purple-400/20"
+            type="button"
+            aria-label="Abrir menu do usuario"
+          >
+            {user?.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt="Foto do usuario"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="font-bold text-sm">{getInitials(user?.email)}</span>
+            )}
+          </button>
+
+          {showUserMenu && (
+            <div className="absolute right-0 mt-2 min-w-36 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 z-50">
+              <button
+                onClick={openMembers}
+                className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+                type="button"
+              >
+                Membros
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowUserMenu(false);
+                  setShowMoreOptionsModal(true);
+                }}
+                className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+                type="button"
+              >
+                Mais opções
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+                type="button"
+              >
+                Sair
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {showMoreOptionsModal && (
@@ -653,24 +796,6 @@ export default function MobileAccountTypePage({
           </div>
         </div>
       )}
-
-      <div className="relative flex items-center justify-center">
-        <div className="flex items-center gap-4 bg-zinc-900 px-5 py-2 rounded-full">
-          <button onClick={goPrev} type="button">
-            ←
-          </button>
-
-          <span>
-            {currentMonth
-              ? `${monthName(currentMonth.month)} ${currentMonth.year}`
-              : ""}
-          </span>
-
-          <button onClick={goNext} type="button">
-            →
-          </button>
-        </div>
-      </div>
 
       <div className="bg-purple-600 px-4 py-3 rounded-2xl">
         <div className="flex justify-between items-center">
@@ -997,10 +1122,16 @@ export default function MobileAccountTypePage({
       {accountToDelete && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
           <div className="bg-zinc-900 p-5 rounded-2xl w-full max-w-sm">
-            <h2 className="text-lg font-bold mb-2">{deleteTitle}</h2>
+            <h2 className="text-lg font-bold mb-2">
+              {isDeletingInstallmentAccount
+                ? "Excluir conta parcelada?"
+                : deleteTitle}
+            </h2>
 
             <p className="text-sm text-zinc-400">
-              Deseja realmente excluir {accountToDelete.name}?
+              {isDeletingInstallmentAccount
+                ? "Esta conta e as próximas parcelas dela serão removidas dos meses futuros. Parcelas de meses anteriores serão mantidas no histórico."
+                : `Deseja realmente excluir ${accountToDelete.name}?`}
             </p>
 
             <div className="flex gap-2 mt-5">
@@ -1022,6 +1153,186 @@ export default function MobileAccountTypePage({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {showMembersModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-bold">Membros</h2>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={openAddMember}
+                  className="bg-purple-600 hover:bg-purple-700 p-2 rounded-lg"
+                  type="button"
+                  title="Cadastrar membro"
+                  aria-label="Cadastrar membro"
+                >
+                  <Plus size={18} />
+                </button>
+
+                <button
+                  onClick={() => setShowMembersModal(false)}
+                  className="bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded-lg text-sm"
+                  type="button"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            {isLoadingMembers ? (
+              <div className="text-sm text-zinc-400">Carregando...</div>
+            ) : members.length === 0 ? (
+              <div className="text-sm text-zinc-400">
+                Nenhum membro encontrado.
+              </div>
+            ) : (
+              <div className="max-h-[58vh] overflow-y-auto pr-1 space-y-2">
+                {members.map((member) => (
+                  <div
+                    key={member.id}
+                    className="bg-zinc-800/70 border border-zinc-700 rounded-xl px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 font-semibold truncate">
+                        {member.name || member.email.split("@")[0]}
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-2">
+                        {member.role === "admin" && (
+                          <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-[11px] font-semibold text-purple-100 border border-purple-400/20">
+                            Admin
+                          </span>
+                        )}
+
+                        {member.status === "pending" && (
+                          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-200 border border-amber-400/20">
+                            Pendente
+                          </span>
+                        )}
+
+                        {canDeleteMembers && member.role !== "admin" && (
+                          <button
+                            type="button"
+                            onClick={() => setMemberToDelete(member)}
+                            className="p-1 text-zinc-500 hover:text-red-300 transition"
+                            title="Remover membro"
+                            aria-label={`Remover membro ${
+                              member.name || member.email
+                            }`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-zinc-400 break-words mt-1">
+                      {member.email}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {memberToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5">
+            <h2 className="text-lg font-bold mb-2">Remover membro</h2>
+
+            <p className="text-sm text-zinc-400">
+              Deseja remover{" "}
+              {memberToDelete.name || memberToDelete.email.split("@")[0]} do
+              grupo?
+            </p>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={confirmDeleteMember}
+                disabled={isDeletingMember}
+                type="button"
+                autoFocus
+              >
+                {isDeletingMember ? "Removendo..." : "Remover"}
+              </button>
+
+              <button
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (isDeletingMember) return;
+                  setMemberToDelete(null);
+                }}
+                disabled={isDeletingMember}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddMemberModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <form
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveMember();
+            }}
+          >
+            <h2 className="text-lg font-bold mb-4">Cadastrar membro</h2>
+
+            <label className="block mb-3">
+              <span className={fieldLabelClass}>Nome</span>
+              <input
+                value={memberName}
+                onChange={(event) => setMemberName(event.target.value)}
+                placeholder="Nome"
+                disabled={isSavingMember}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 outline-none"
+                autoFocus
+              />
+            </label>
+
+            <label className="block mb-4">
+              <span className={fieldLabelClass}>E-mail</span>
+              <input
+                type="email"
+                value={memberEmail}
+                onChange={(event) => setMemberEmail(event.target.value)}
+                placeholder="email@exemplo.com"
+                disabled={isSavingMember}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 outline-none"
+              />
+            </label>
+
+            <div className="flex justify-between gap-2">
+              <button
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingMember}
+                type="submit"
+              >
+                {isSavingMember ? "Salvando..." : "Salvar"}
+              </button>
+
+              <button
+                onClick={closeAddMember}
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingMember}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

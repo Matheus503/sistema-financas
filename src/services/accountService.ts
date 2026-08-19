@@ -202,6 +202,13 @@ const getMonthOrder = (month: MonthDocData) =>
 const stripInstallmentSuffix = (name: string) =>
   name.replace(/\s-\s\d+\/\d+$/, "").trim();
 
+export const isInstallmentAccount = (
+  account: Pick<
+    FinanceAccount,
+    "installmentGroupId"
+  > | null | undefined
+) => Boolean(account?.installmentGroupId);
+
 const accountMatchesCreditCard = (
   accountId: string,
   account: FinanceAccount,
@@ -692,5 +699,85 @@ export const toggleAccountPaid = async (
 };
 
 export const deleteAccount = async (monthId: string, accountId: string) => {
-  await deleteDoc(doc(db, "months", monthId, "accounts", accountId));
+  const accountRef = doc(db, "months", monthId, "accounts", accountId);
+  const accountSnap = await getDoc(accountRef);
+
+  if (!accountSnap.exists()) {
+    await deleteDoc(accountRef);
+    return;
+  }
+
+  const account = {
+    id: accountSnap.id,
+    ...accountSnap.data(),
+  } as FinanceAccount;
+  const installmentTotal = normalizeInstallment(
+    account.installmentTotal,
+    "installmentTotal"
+  );
+  const installmentCurrent = normalizeInstallment(
+    account.installmentCurrent,
+    "installmentCurrent"
+  );
+  const installmentGroupId = String(account.installmentGroupId || "");
+
+  if (!installmentTotal || !installmentCurrent || !installmentGroupId) {
+    await deleteDoc(accountRef);
+    return;
+  }
+
+  const monthSnap = await getDoc(doc(db, "months", monthId));
+  const monthData = monthSnap.data() as MonthDocData | undefined;
+  const groupId = String(monthData?.groupId || "");
+  const currentOrder =
+    Number(monthData?.year || 0) * 100 + Number(monthData?.month || 0);
+
+  if (!groupId || !currentOrder) {
+    await deleteDoc(accountRef);
+    return;
+  }
+
+  const monthsSnap = await getDocs(
+    query(collection(db, "months"), where("groupId", "==", groupId))
+  );
+  const batch = writeBatch(db);
+  let hasDeletes = false;
+
+  for (const monthDoc of monthsSnap.docs) {
+    const data = monthDoc.data() as MonthDocData;
+    const monthOrder = Number(data.year || 0) * 100 + Number(data.month || 0);
+
+    if (monthOrder < currentOrder) continue;
+
+    const accountsSnap = await getDocs(
+      collection(db, "months", monthDoc.id, "accounts")
+    );
+
+    accountsSnap.docs.forEach((item) => {
+      const itemData = item.data() as FinanceAccount;
+
+      if (String(itemData.installmentGroupId || "") !== installmentGroupId) {
+        return;
+      }
+
+      const itemInstallmentCurrent = normalizeInstallment(
+        itemData.installmentCurrent,
+        "installmentCurrent"
+      );
+
+      if (
+        itemInstallmentCurrent !== undefined &&
+        itemInstallmentCurrent < installmentCurrent
+      ) {
+        return;
+      }
+
+      batch.delete(doc(db, "months", monthDoc.id, "accounts", item.id));
+      hasDeletes = true;
+    });
+  }
+
+  if (hasDeletes) {
+    await batch.commit();
+  }
 };

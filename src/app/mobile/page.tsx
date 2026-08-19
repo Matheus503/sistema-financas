@@ -29,6 +29,10 @@ import {
   updateTransaction,
   deleteTransaction,
 } from "../../services/transactionService";
+import {
+  anticipateInstallmentPurchase,
+  cancelInstallmentPurchaseFromInstallment,
+} from "../../services/installmentPurchaseService";
 
 import {
   formatAccountNameWithDueDay,
@@ -40,6 +44,7 @@ import type { FinanceAccount } from "../../services/accountService";
 
 import LaunchModal from "../../components/LaunchModal";
 import EditAccountModal from "../../components/EditAccountModal";
+import SwitchControl from "../../components/SwitchControl";
 
 const ALL_LAUNCHERS = "all";
 
@@ -151,6 +156,21 @@ export default function MobileDashboard() {
 
   const [editValue, setEditValue] =
     useState("");
+
+  const [
+    anticipateInstallments,
+    setAnticipateInstallments,
+  ] = useState(false);
+
+  const [
+    anticipationInstallments,
+    setAnticipationInstallments,
+  ] = useState("");
+
+  const [
+    anticipationPaidValue,
+    setAnticipationPaidValue,
+  ] = useState("");
 
   // 🔥 exclusão
   const [
@@ -315,6 +335,20 @@ export default function MobileDashboard() {
     );
   };
 
+  const stripInstallmentSuffix = (value: string) =>
+    String(value || "")
+      .replace(/\s*\(\d+\/\d+\)\s*$/, "")
+      .replace(/\s-\s\d+\/\d+\s*$/, "")
+      .trim();
+
+  const closeEditTransaction = () => {
+    setEditTransaction(null);
+    setEditValue("");
+    setAnticipateInstallments(false);
+    setAnticipationInstallments("");
+    setAnticipationPaidValue("");
+  };
+
   const handleLogout = async () => {
     await auth.signOut();
     setShowUserMenu(false);
@@ -443,6 +477,159 @@ export default function MobileDashboard() {
       toast.error("Nao foi possivel remover o membro.");
     } finally {
       setIsDeletingMember(false);
+    }
+  };
+
+  const editRemainingInstallments =
+    editTransaction?.installmentTotal && editTransaction?.installmentCurrent
+      ? Math.max(
+          Number(editTransaction.installmentTotal) -
+            Number(editTransaction.installmentCurrent),
+          0
+        )
+      : 0;
+  const parsedAnticipationInstallments = anticipationInstallments
+    ? Number(anticipationInstallments)
+    : 0;
+  const anticipationOriginalAmount =
+    editTransaction && parsedAnticipationInstallments > 0
+      ? Number(editTransaction.value || 0) * parsedAnticipationInstallments
+      : 0;
+  const anticipationPaidAmount = parseCurrency(anticipationPaidValue);
+  const anticipationDiscountAmount = Math.max(
+    anticipationOriginalAmount - anticipationPaidAmount,
+    0
+  );
+  const canAnticipateEditTransaction =
+    Boolean(editTransaction?.installmentGroupId) && editRemainingInstallments > 0;
+
+  const saveEditTransaction = async () => {
+    if (!monthId || !editTransaction) return;
+
+    const parsedValue = parseCurrency(editValue);
+
+    if (Number.isNaN(parsedValue)) {
+      toast.error("Informe um valor valido.");
+      return;
+    }
+
+    if (anticipateInstallments) {
+      if (!groupId || !editTransaction.accountId || !editTransaction.installmentGroupId) {
+        toast.error("Nao foi possivel identificar a compra parcelada.");
+        return;
+      }
+
+      if (
+        !Number.isInteger(parsedAnticipationInstallments) ||
+        parsedAnticipationInstallments < 1 ||
+        parsedAnticipationInstallments > editRemainingInstallments
+      ) {
+        toast.error("Informe uma quantidade valida de parcelas para antecipar.");
+        return;
+      }
+
+      if (
+        !Number.isFinite(anticipationPaidAmount) ||
+        anticipationPaidAmount <= 0
+      ) {
+        toast.error("Informe o valor cobrado pelo banco.");
+        return;
+      }
+
+      if (anticipationPaidAmount > anticipationOriginalAmount) {
+        toast.error("O valor cobrado nao pode ser maior que o valor original.");
+        return;
+      }
+    }
+
+    try {
+      await updateTransaction(monthId, editTransaction.id, {
+        value: parsedValue,
+      });
+
+      if (anticipateInstallments) {
+        const userId =
+          editTransaction.launcherId ||
+          editTransaction.userId ||
+          auth.currentUser?.uid ||
+          "";
+        const userName =
+          editTransaction.launcherName ||
+          editTransaction.userName ||
+          auth.currentUser?.displayName ||
+          auth.currentUser?.email ||
+          "";
+
+        await anticipateInstallmentPurchase({
+          groupId,
+          currentMonthId: monthId,
+          installmentGroupId: String(editTransaction.installmentGroupId),
+          currentInstallment: Number(editTransaction.installmentCurrent || 1),
+          installmentsToAnticipate: parsedAnticipationInstallments,
+          originalAmount: anticipationOriginalAmount,
+          paidAmount: anticipationPaidAmount,
+          discountAmount: anticipationDiscountAmount,
+          accountId: String(editTransaction.accountId),
+          category: editTransaction.category || "Sem categoria",
+          baseNote: stripInstallmentSuffix(
+            editTransaction.note || editTransaction.category || ""
+          ),
+          date: editTransaction.date || new Date().toISOString().slice(0, 10),
+          userId,
+          userName,
+          launcherId: userId,
+          launcherName: userName,
+        });
+      }
+
+      const refreshed = await getTransactions(monthId);
+      setTransactions(refreshed);
+      closeEditTransaction();
+      toast.success(
+        anticipateInstallments
+          ? "Antecipação registrada com sucesso."
+          : "Lançamento editado com sucesso."
+      );
+    } catch (error) {
+      console.error("Erro ao editar lançamento mobile:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel editar o lançamento."
+      );
+    }
+  };
+
+  const isDeletingInstallmentTransaction =
+    Boolean(deleteTransactionData?.installmentGroupId) &&
+    Boolean(deleteTransactionData?.installmentCurrent);
+
+  const confirmDeleteTransaction = async () => {
+    if (!monthId || !deleteTransactionData) return;
+
+    try {
+      if (
+        groupId &&
+        deleteTransactionData.installmentGroupId &&
+        deleteTransactionData.installmentCurrent
+      ) {
+        await cancelInstallmentPurchaseFromInstallment({
+          groupId,
+          currentMonthId: monthId,
+          installmentGroupId: String(deleteTransactionData.installmentGroupId),
+          currentInstallment: Number(deleteTransactionData.installmentCurrent),
+        });
+      } else {
+        await deleteTransaction(monthId, deleteTransactionData.id);
+      }
+
+      const refreshed = await getTransactions(monthId);
+      setTransactions(refreshed);
+      setDeleteTransactionData(null);
+      toast.success("Lançamento excluído com sucesso.");
+    } catch (error) {
+      console.error("Erro ao excluir lançamento mobile:", error);
+      toast.error("Nao foi possivel excluir o lançamento.");
     }
   };
 
@@ -1034,6 +1221,9 @@ export default function MobileDashboard() {
                                   }
                                 )
                               );
+                              setAnticipateInstallments(false);
+                              setAnticipationInstallments("");
+                              setAnticipationPaidValue("");
                             }}
                           >
                             {renderValue(
@@ -1084,7 +1274,7 @@ export default function MobileDashboard() {
       {editTransaction && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
 
-          <div className="bg-zinc-900 p-5 rounded-2xl w-full max-w-sm">
+          <div className="bg-zinc-900 p-5 rounded-2xl w-full max-w-sm border border-zinc-800">
 
             <h2 className="text-lg font-bold mb-4">
               Editar valor
@@ -1104,43 +1294,105 @@ export default function MobileDashboard() {
               className="w-full bg-zinc-800 rounded-xl p-3 outline-none"
             />
 
+            {canAnticipateEditTransaction && (
+              <div className="mt-4 space-y-3 border-t border-zinc-800 pt-4">
+                <SwitchControl
+                  checked={anticipateInstallments}
+                  label="Antecipar parcelas"
+                  onChange={(checked) => {
+                    setAnticipateInstallments(checked);
+
+                    if (checked) {
+                      setAnticipationInstallments(
+                        editRemainingInstallments
+                          ? String(editRemainingInstallments)
+                          : ""
+                      );
+                      setAnticipationPaidValue("");
+                    } else {
+                      setAnticipationInstallments("");
+                      setAnticipationPaidValue("");
+                    }
+                  }}
+                />
+
+                {anticipateInstallments && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2 text-[11px] text-zinc-400">
+                      <label className="rounded-xl bg-zinc-800/70 p-3">
+                        <span className="block">Antecipar</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={editRemainingInstallments}
+                          step={1}
+                          value={anticipationInstallments}
+                          onChange={(event) =>
+                            setAnticipationInstallments(event.target.value)
+                          }
+                          className="mt-1 w-full bg-transparent p-0 text-sm font-semibold text-purple-300 outline-none"
+                          placeholder="0"
+                        />
+                      </label>
+
+                      <div className="rounded-xl bg-zinc-800/70 p-3">
+                        <div>Atual</div>
+                        <div className="mt-1 text-sm font-semibold text-zinc-100">
+                          {editTransaction.installmentCurrent}/
+                          {editTransaction.installmentTotal}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-zinc-800/70 p-3">
+                        <div>Restantes</div>
+                        <div className="mt-1 text-sm font-semibold text-zinc-100">
+                          {editRemainingInstallments}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-[11px] text-zinc-400">
+                      <label className="rounded-xl bg-zinc-800/70 p-3">
+                        <span className="block">Valor pago</span>
+                        <input
+                          type="tel"
+                          inputMode="decimal"
+                          value={anticipationPaidValue}
+                          onChange={(event) =>
+                            setAnticipationPaidValue(
+                              formatCurrencyInput(event.target.value)
+                            )
+                          }
+                          className="mt-1 w-full bg-transparent p-0 text-sm font-semibold text-zinc-100 outline-none"
+                          placeholder="R$ 0,00"
+                        />
+                      </label>
+
+                      <div className="rounded-xl bg-zinc-800/70 p-3">
+                        <div>Original</div>
+                        <div className="mt-1 text-sm font-semibold text-zinc-100">
+                          {formatMoney(anticipationOriginalAmount)}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-zinc-800/70 p-3">
+                        <div>Desconto</div>
+                        <div className="mt-1 text-sm font-semibold text-emerald-300">
+                          {formatMoney(anticipationDiscountAmount)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex gap-2 mt-4">
 
               <button
                 className="flex-1 bg-purple-600 hover:bg-purple-700 py-3 rounded-xl font-semibold transition"
-                onClick={async () => {
-                  if (
-                    !monthId ||
-                    !editTransaction
-                  )
-                    return;
-
-                  await updateTransaction(
-                    monthId,
-                    editTransaction.id,
-                    {
-                      value:
-                        parseCurrency(
-                          editValue
-                        ),
-                    }
-                  );
-
-                  const refreshed =
-                    await getTransactions(
-                      monthId
-                    );
-
-                  setTransactions(
-                    refreshed
-                  );
-
-                  setEditTransaction(
-                    null
-                  );
-
-                  setEditValue("");
-                }}
+                onClick={saveEditTransaction}
+                type="button"
               >
                 Salvar
               </button>
@@ -1148,12 +1400,9 @@ export default function MobileDashboard() {
               <button
                 className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition"
                 onClick={() => {
-                  setEditTransaction(
-                    null
-                  );
-
-                  setEditValue("");
+                  closeEditTransaction();
                 }}
+                type="button"
               >
                 Cancelar
               </button>
@@ -1171,42 +1420,22 @@ export default function MobileDashboard() {
           <div className="bg-zinc-900 p-5 rounded-2xl w-full max-w-sm">
 
             <h2 className="text-lg font-bold mb-2">
-              Excluir lançamento
+              {isDeletingInstallmentTransaction
+                ? "Excluir compra parcelada?"
+                : "Excluir lançamento"}
             </h2>
 
             <p className="text-sm text-zinc-400">
-              Deseja realmente excluir este lançamento?
+              {isDeletingInstallmentTransaction
+                ? "Este lançamento e as próximas parcelas desta compra serão removidos. Parcelas de meses anteriores serão mantidas no histórico."
+                : "Deseja realmente excluir este lançamento?"}
             </p>
 
             <div className="flex gap-2 mt-5">
 
               <button
                 className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition"
-                onClick={async () => {
-                  if (
-                    !monthId ||
-                    !deleteTransactionData
-                  )
-                    return;
-
-                  await deleteTransaction(
-                    monthId,
-                    deleteTransactionData.id
-                  );
-
-                  const refreshed =
-                    await getTransactions(
-                      monthId
-                    );
-
-                  setTransactions(
-                    refreshed
-                  );
-
-                  setDeleteTransactionData(
-                    null
-                  );
-                }}
+                onClick={confirmDeleteTransaction}
                 type="button"
                 autoFocus
               >

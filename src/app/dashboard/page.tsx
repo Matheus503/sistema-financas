@@ -25,6 +25,7 @@ import {
   deleteAccount,
   isCalculatedAccount,
   isCreditCardAccount,
+  isInstallmentAccount,
   updateAccountsOrder,
   updateAccountExpectedValue,
   updateAccountValue,
@@ -510,6 +511,9 @@ export default function DashboardPage() {
     setAccountToDelete(null);
     toast.success("Conta excluida com sucesso.");
   };
+
+  const isDeletingInstallmentAccount =
+    isInstallmentAccount(accountToDelete);
 
   const openEdit = (acc: any) => {
     if (isCalculatedAccount(acc)) return;
@@ -1321,8 +1325,18 @@ export default function DashboardPage() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
           <div className="bg-zinc-900 p-6 rounded-xl w-80 text-center">
             <h2 className="mb-4 text-lg font-bold">
-              Deseja realmente excluir?
+              {isDeletingInstallmentAccount
+                ? "Excluir conta parcelada?"
+                : "Deseja realmente excluir?"}
             </h2>
+
+            {isDeletingInstallmentAccount && (
+              <p className="mb-5 text-sm text-zinc-400">
+                Esta conta e as próximas parcelas dela serão removidas dos meses
+                futuros. Parcelas de meses anteriores serão mantidas no
+                histórico.
+              </p>
+            )}
 
             <div className="flex justify-between gap-2">
               <button
