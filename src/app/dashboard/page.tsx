@@ -782,7 +782,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-6 py-6">
+    <div className="min-h-screen bg-black text-white px-6 py-6">
       {/* HEADER */}
       <div className="flex justify-between items-start mb-6">
         <div>
@@ -1168,7 +1168,7 @@ export default function DashboardPage() {
       </div>
 
       {/* COLUNAS */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 items-start gap-4">
         <AccountColumn
           title="Créditos"
           type="CREDIT"

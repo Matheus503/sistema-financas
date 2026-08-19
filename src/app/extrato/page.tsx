@@ -97,6 +97,10 @@ const monthNames = [
 
 const ALL_LAUNCHERS = "all";
 const ALL_CREDIT_CARDS = "all";
+const PERIOD_CURRENT_INVOICE = "current_invoice";
+const PERIOD_THIS_MONTH = "this_month";
+const PERIOD_LAST_30_DAYS = "last_30_days";
+const PERIOD_CUSTOM = "custom";
 
 function ExtratoContent() {
   const router = useRouter();
@@ -122,6 +126,7 @@ function ExtratoContent() {
 
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
+  const [periodFilter, setPeriodFilter] = useState(PERIOD_CURRENT_INVOICE);
   const [showDateRangePicker, setShowDateRangePicker] = useState(false);
   const [rangeHoverDate, setRangeHoverDate] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
@@ -158,6 +163,16 @@ function ExtratoContent() {
 
   const formatCurrencyInput = (value: number) => {
     return Number(value || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const formatCurrencyTyping = (nextValue: string) => {
+    const numbers = nextValue.replace(/\D/g, "");
+    const amount = Number(numbers) / 100;
+
+    return amount.toLocaleString("pt-BR", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -284,6 +299,10 @@ function ExtratoContent() {
   };
 
   const getDateRangeLabel = () => {
+    if (periodFilter === PERIOD_CURRENT_INVOICE) return "Fatura atual";
+    if (periodFilter === PERIOD_THIS_MONTH) return "Este mês";
+    if (periodFilter === PERIOD_LAST_30_DAYS) return "Últimos 30 dias";
+
     if (filterStartDate && filterEndDate) {
       return `${formatDateLabel(filterStartDate)} - ${formatDateLabel(
         filterEndDate
@@ -293,6 +312,13 @@ function ExtratoContent() {
     if (filterStartDate) return `${formatDateLabel(filterStartDate)} - ...`;
 
     return "Selecionar período";
+  };
+
+  const clearDateRange = () => {
+    setPeriodFilter(PERIOD_CURRENT_INVOICE);
+    setFilterStartDate("");
+    setFilterEndDate("");
+    setRangeHoverDate("");
   };
 
   const addCalendarMonths = (date: Date, amount: number) =>
@@ -332,6 +358,8 @@ function ExtratoContent() {
   };
 
   const selectRangeDate = (dateKey: string) => {
+    setPeriodFilter(PERIOD_CUSTOM);
+
     if (!filterStartDate || filterEndDate) {
       setFilterStartDate(dateKey);
       setFilterEndDate("");
@@ -350,10 +378,33 @@ function ExtratoContent() {
     setShowDateRangePicker(false);
   };
 
-  const clearDateRange = () => {
-    setFilterStartDate("");
-    setFilterEndDate("");
-    setRangeHoverDate("");
+  const applyPeriodFilter = (value: string) => {
+    setPeriodFilter(value);
+
+    const today = new Date();
+
+    if (value === PERIOD_CURRENT_INVOICE) {
+      setFilterStartDate("");
+      setFilterEndDate("");
+      setRangeHoverDate("");
+      return;
+    }
+
+    if (value === PERIOD_THIS_MONTH) {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      setFilterStartDate(getDateKey(firstDay));
+      setFilterEndDate(getDateKey(today));
+      setRangeHoverDate("");
+      return;
+    }
+
+    if (value === PERIOD_LAST_30_DAYS) {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 29);
+      setFilterStartDate(getDateKey(start));
+      setFilterEndDate(getDateKey(today));
+      setRangeHoverDate("");
+    }
   };
 
   const renderCalendarMonth = (monthDate: Date) => {
@@ -859,7 +910,28 @@ function ExtratoContent() {
 
             {showDateRangePicker && (
               <div className="absolute left-0 top-[74px] z-50 w-[min(92vw,640px)] rounded-2xl border border-zinc-700 bg-zinc-900 p-4 shadow-2xl">
-                <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="mb-4 grid grid-cols-3 gap-2">
+                  {[
+                    { label: "Fatura atual", value: PERIOD_CURRENT_INVOICE },
+                    { label: "Este mês", value: PERIOD_THIS_MONTH },
+                    { label: "Últimos 30 dias", value: PERIOD_LAST_30_DAYS },
+                  ].map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => applyPeriodFilter(item.value)}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                        periodFilter === item.value
+                          ? "bg-purple-600 text-white"
+                          : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mb-4 flex items-center justify-between gap-3 border-t border-zinc-800 pt-4">
                   <button
                     type="button"
                     onClick={() =>
@@ -1074,14 +1146,29 @@ function ExtratoContent() {
                       <label className="rounded-lg bg-zinc-800/70 p-3">
                         <span className="block">Antecipar</span>
                         <input
-                          type="number"
-                          min={1}
-                          max={editRemainingInstallments}
-                          step={1}
+                          type="tel"
+                          inputMode="numeric"
                           value={anticipationInstallments}
-                          onChange={(event) =>
-                            setAnticipationInstallments(event.target.value)
-                          }
+                          onChange={(event) => {
+                            const nextValue = event.target.value.replace(
+                              /\D/g,
+                              ""
+                            );
+
+                            if (!nextValue) {
+                              setAnticipationInstallments("");
+                              return;
+                            }
+
+                            setAnticipationInstallments(
+                              String(
+                                Math.min(
+                                  Number(nextValue),
+                                  editRemainingInstallments
+                                )
+                              )
+                            );
+                          }}
                           className="mt-1 w-full bg-transparent p-0 text-sm font-semibold text-purple-300 outline-none"
                           placeholder="0"
                         />
@@ -1106,9 +1193,13 @@ function ExtratoContent() {
                       <label className="rounded-lg bg-zinc-800/70 p-3">
                         <span className="block">Valor pago</span>
                         <input
+                          type="tel"
+                          inputMode="decimal"
                           value={anticipationPaidValue}
                           onChange={(event) =>
-                            setAnticipationPaidValue(event.target.value)
+                            setAnticipationPaidValue(
+                              formatCurrencyTyping(event.target.value)
+                            )
                           }
                           className="mt-1 w-full bg-transparent p-0 text-sm font-semibold text-zinc-100 outline-none"
                           placeholder="R$ 0,00"

@@ -106,7 +106,7 @@ export default function AccountColumn({
   }, [columnAccounts, getAccountValue]);
 
   return (
-    <div className="bg-zinc-900/70 p-4 rounded-2xl border border-zinc-800">
+    <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800">
       <div className="flex justify-between items-center mb-4">
         <div>
           <h2 className="font-semibold">{title}</h2>

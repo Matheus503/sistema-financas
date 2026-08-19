@@ -1322,14 +1322,29 @@ export default function MobileDashboard() {
                       <label className="rounded-xl bg-zinc-800/70 p-3">
                         <span className="block">Antecipar</span>
                         <input
-                          type="number"
-                          min={1}
-                          max={editRemainingInstallments}
-                          step={1}
+                          type="tel"
+                          inputMode="numeric"
                           value={anticipationInstallments}
-                          onChange={(event) =>
-                            setAnticipationInstallments(event.target.value)
-                          }
+                          onChange={(event) => {
+                            const nextValue = event.target.value.replace(
+                              /\D/g,
+                              ""
+                            );
+
+                            if (!nextValue) {
+                              setAnticipationInstallments("");
+                              return;
+                            }
+
+                            setAnticipationInstallments(
+                              String(
+                                Math.min(
+                                  Number(nextValue),
+                                  editRemainingInstallments
+                                )
+                              )
+                            );
+                          }}
                           className="mt-1 w-full bg-transparent p-0 text-sm font-semibold text-purple-300 outline-none"
                           placeholder="0"
                         />
