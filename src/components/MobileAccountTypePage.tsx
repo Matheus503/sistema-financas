@@ -35,6 +35,7 @@ import {
 import CreateAccountModal from "./CreateAccountModal";
 import EditAccountModal from "./EditAccountModal";
 import LaunchModal from "./LaunchModal";
+import { useModalKeyboardActions } from "../hooks/useModalKeyboardActions";
 
 type Props = {
   accountType: "CREDIT" | "FIXED" | "VARIABLE";
@@ -597,6 +598,74 @@ export default function MobileAccountTypePage({
     setAccountToDelete(null);
     toast.success(deletedMessage);
   };
+
+  useModalKeyboardActions({
+    enabled: showMoreOptionsModal,
+    onCancel: () => setShowMoreOptionsModal(false),
+  });
+
+  useModalKeyboardActions({
+    enabled: showDeleteAccountModal,
+    onCancel: () => {
+      if (isDeletingAccount) return;
+      setShowDeleteAccountModal(false);
+    },
+    onConfirm: confirmDeleteAccount,
+    cancelDisabled: isDeletingAccount,
+    confirmDisabled: isDeletingAccount,
+  });
+
+  useModalKeyboardActions({
+    enabled: showMembersModal && !showAddMemberModal && !memberToDelete,
+    onCancel: () => setShowMembersModal(false),
+  });
+
+  useModalKeyboardActions({
+    enabled: showAddMemberModal,
+    onCancel: closeAddMember,
+    cancelDisabled: isSavingMember,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(memberToDelete),
+    onCancel: () => {
+      if (isDeletingMember) return;
+      setMemberToDelete(null);
+    },
+    onConfirm: confirmDeleteMember,
+    cancelDisabled: isDeletingMember,
+    confirmDisabled: isDeletingMember,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(pixAccount) && !pixEditingTransaction && !pixDeletingTransaction,
+    onCancel: closePixHistory,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(pixEditingTransaction),
+    onCancel: cancelPixEdit,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(pixDeletingTransaction),
+    onCancel: () => setPixDeletingTransaction(null),
+    onConfirm: confirmDeletePixTransaction,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(editAccount),
+    onCancel: () => {
+      setEditAccount(null);
+      setEditValue("");
+    },
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(accountToDelete),
+    onCancel: () => setAccountToDelete(null),
+    onConfirm: confirmDelete,
+  });
 
   const isDeletingInstallmentAccount =
     isInstallmentAccount(accountToDelete);

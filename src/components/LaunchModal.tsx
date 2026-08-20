@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { auth } from "../lib/auth";
 import {
@@ -34,6 +34,7 @@ import {
   type FinanceCategory,
   updateCategoryName,
 } from "../services/categoryService";
+import { useModalKeyboardActions } from "../hooks/useModalKeyboardActions";
 
 type MonthDoc = {
   id: string;
@@ -216,6 +217,13 @@ const parseCurrency = (
   );
 };
 
+const normalizeSearch = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
 export default function LaunchModal({
   open,
   onClose,
@@ -236,6 +244,18 @@ export default function LaunchModal({
 
   const [category, setCategory] =
     useState("");
+  const [
+    categorySearch,
+    setCategorySearch,
+  ] = useState("");
+  const [
+    isCategorySelectOpen,
+    setIsCategorySelectOpen,
+  ] = useState(false);
+  const [
+    categoryManageSearch,
+    setCategoryManageSearch,
+  ] = useState("");
 
   const [categories, setCategories] =
     useState<FinanceCategory[]>([]);
@@ -326,6 +346,40 @@ export default function LaunchModal({
   const isPixSelected = isPixAccount(selectedAccount);
   const fieldLabelClass = "mb-1 block text-xs font-semibold text-zinc-400";
 
+  const filteredCategories =
+    useMemo(() => {
+      const search =
+        normalizeSearch(
+          categorySearch
+        );
+
+      if (!search) return categories;
+
+      return categories.filter((item) =>
+        normalizeSearch(item.name).includes(search)
+      );
+    }, [
+      categories,
+      categorySearch,
+    ]);
+
+  const filteredManagedCategories =
+    useMemo(() => {
+      const search =
+        normalizeSearch(
+          categoryManageSearch
+        );
+
+      if (!search) return categories;
+
+      return categories.filter((item) =>
+        normalizeSearch(item.name).includes(search)
+      );
+    }, [
+      categories,
+      categoryManageSearch,
+    ]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -338,6 +392,9 @@ export default function LaunchModal({
       getTodayDateKey()
     );
     setCategory("");
+    setCategorySearch("");
+    setIsCategorySelectOpen(false);
+    setCategoryManageSearch("");
     setCategoryGroupId("");
     setShowCategoriesModal(false);
     setShowAddCategoryModal(false);
@@ -417,7 +474,22 @@ export default function LaunchModal({
     };
   }, [open, variableAccounts]);
 
-  if (!open) return null;
+  const closeMainModal = () => {
+    if (isSavingRef.current) return;
+
+    setValue("");
+    setCategory("");
+    setCategorySearch("");
+    setIsCategorySelectOpen(false);
+    setCategoryManageSearch("");
+    setNote("");
+
+    setDate(
+      getTodayDateKey()
+    );
+
+    onClose();
+  };
 
   const openAddCategory = () => {
     setNewCategoryName("");
@@ -549,6 +621,71 @@ export default function LaunchModal({
       setIsDeletingCategory(false);
     }
   };
+
+  const closeCategorySelect = () => {
+    setCategorySearch("");
+    setIsCategorySelectOpen(false);
+  };
+
+  const selectCategory = (nextCategory: string) => {
+    setCategory(nextCategory);
+    closeCategorySelect();
+  };
+
+  useModalKeyboardActions({
+    enabled:
+      open &&
+      !isCategorySelectOpen &&
+      !showCategoriesModal &&
+      !showAddCategoryModal &&
+      !editingCategory &&
+      !categoryToDelete,
+    onCancel: closeMainModal,
+    cancelDisabled: isSaving,
+  });
+
+  useModalKeyboardActions({
+    enabled: open && isCategorySelectOpen,
+    onCancel: closeCategorySelect,
+  });
+
+  useModalKeyboardActions({
+    enabled:
+      open &&
+      showCategoriesModal &&
+      !showAddCategoryModal &&
+      !editingCategory &&
+      !categoryToDelete,
+    onCancel: () => {
+      setCategoryManageSearch("");
+      setShowCategoriesModal(false);
+    },
+  });
+
+  useModalKeyboardActions({
+    enabled: open && showAddCategoryModal,
+    onCancel: closeAddCategory,
+    cancelDisabled: isSavingCategory,
+  });
+
+  useModalKeyboardActions({
+    enabled: open && Boolean(editingCategory),
+    onCancel: closeEditCategory,
+    cancelDisabled: isEditingCategory,
+  });
+
+  useModalKeyboardActions({
+    enabled: open && Boolean(categoryToDelete),
+    onCancel: () => {
+      if (isDeletingCategory) return;
+      setCategoryToDelete(null);
+    },
+    onConfirm: confirmDeleteCategory,
+    cancelDisabled: isDeletingCategory,
+    confirmDisabled: isDeletingCategory,
+  });
+
+  if (!open) return null;
 
   const getOrCreateCreditCardForMonth = async (
     targetMonthId: string,
@@ -1123,6 +1260,8 @@ export default function LaunchModal({
 
                 if (!isCreditCardAccount(nextAccount) && !isPixAccount(nextAccount)) {
                   setCategory("");
+                  setCategorySearch("");
+                  setIsCategorySelectOpen(false);
                   setInstallments("1");
                 }
               }}
@@ -1173,41 +1312,118 @@ export default function LaunchModal({
         {/* 🔥 CATEGORIA */}
         {(isCreditCardSelected || isPixSelected) && (
           <div className="flex items-end gap-2">
-            <label className="min-w-0 flex-1">
-              <span className={fieldLabelClass}>Categoria</span>
-              <select
-                value={category}
-                onChange={(e) =>
-                  setCategory(
-                    e.target.value
+            <div
+              className="relative min-w-0 flex-1"
+              onBlur={(event) => {
+                if (
+                  event.currentTarget.contains(
+                    event.relatedTarget
                   )
+                ) {
+                  return;
                 }
-                required
-                disabled={isSaving}
-                className="w-full p-2 bg-zinc-800 rounded"
-              >
-                <option value="">
-                  Selecione a categoria
-                </option>
 
-                {categories.map(
-                  (item) => (
-                    <option
-                      key={item.id}
-                      value={item.name}
-                    >
-                      {item.name}
-                    </option>
-                  )
-                )}
-              </select>
-            </label>
+                closeCategorySelect();
+              }}
+            >
+              <span className={fieldLabelClass}>Categoria</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isSaving) return;
+                  setIsCategorySelectOpen((prev) => !prev);
+                }}
+                disabled={isSaving}
+                className="flex w-full items-center justify-between gap-2 rounded bg-zinc-800 p-2 text-left transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-expanded={isCategorySelectOpen}
+                aria-haspopup="listbox"
+              >
+                <span className={category ? "truncate text-zinc-100" : "truncate text-zinc-400"}>
+                  {category || "Selecione a categoria"}
+                </span>
+                <ChevronDown
+                  size={18}
+                  className={`shrink-0 transition ${
+                    isCategorySelectOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {isCategorySelectOpen && (
+                <div className="absolute left-0 right-0 top-full z-[65] mt-2 rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl">
+                  <label className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2 text-zinc-400">
+                    <Search size={16} />
+                    <input
+                      value={categorySearch}
+                      onChange={(event) =>
+                        setCategorySearch(event.target.value)
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          closeCategorySelect();
+                          return;
+                        }
+
+                        if (event.key !== "Enter") return;
+
+                        event.preventDefault();
+
+                        const firstCategory =
+                          filteredCategories[0];
+
+                        if (firstCategory) {
+                          selectCategory(firstCategory.name);
+                        }
+                      }}
+                      placeholder="Buscar categoria"
+                      autoFocus
+                      className="min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                    />
+                  </label>
+
+                  <div
+                    className="category-scroll max-h-56 overflow-y-auto py-1"
+                    role="listbox"
+                  >
+                    {filteredCategories.length === 0 ? (
+                      <div className="px-3 py-3 text-sm text-zinc-500">
+                        Nenhuma categoria encontrada.
+                      </div>
+                    ) : (
+                      filteredCategories.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => selectCategory(item.name)}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-zinc-100 transition hover:bg-zinc-800"
+                          role="option"
+                          aria-selected={category === item.name}
+                        >
+                          <span className="min-w-0 truncate">
+                            {item.name}
+                          </span>
+                          {category === item.name && (
+                            <Check
+                              size={16}
+                              className="shrink-0 text-purple-300"
+                            />
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             <button
               type="button"
-              onClick={() =>
-                setShowCategoriesModal(true)
-              }
+              onClick={() => {
+                closeCategorySelect();
+                setShowCategoriesModal(true);
+              }}
               disabled={isSaving}
               className="shrink-0 bg-zinc-800 hover:bg-zinc-700 p-2 rounded transition disabled:opacity-60 disabled:cursor-not-allowed"
               title="Ver categorias"
@@ -1267,22 +1483,7 @@ export default function LaunchModal({
           </button>
 
           <button
-            onClick={() => {
-              if (
-                isSavingRef.current
-              )
-                return;
-
-              setValue("");
-              setCategory("");
-              setNote("");
-
-              setDate(
-                getTodayDateKey()
-              );
-
-              onClose();
-            }}
+            onClick={closeMainModal}
             disabled={
               isSaving
             }
@@ -1297,8 +1498,8 @@ export default function LaunchModal({
 
       {showCategoriesModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-sm p-6">
-            <div className="flex items-center justify-between gap-4 mb-4">
+          <div className="flex max-h-[85dvh] w-full max-w-sm flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 p-5 sm:p-6">
+            <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
               <h2 className="text-lg font-bold">
                 Categorias
               </h2>
@@ -1316,9 +1517,10 @@ export default function LaunchModal({
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setShowCategoriesModal(false)
-                  }
+                  onClick={() => {
+                    setCategoryManageSearch("");
+                    setShowCategoriesModal(false);
+                  }}
                   className="bg-zinc-800 hover:bg-zinc-700 px-3 py-1 rounded transition"
                 >
                   Fechar
@@ -1326,13 +1528,30 @@ export default function LaunchModal({
               </div>
             </div>
 
+            <label className="mb-4 flex shrink-0 items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/70 px-3 py-2 text-zinc-400">
+              <Search size={16} />
+              <input
+                value={categoryManageSearch}
+                onChange={(event) =>
+                  setCategoryManageSearch(event.target.value)
+                }
+                placeholder="Buscar categoria"
+                className="min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                autoFocus
+              />
+            </label>
+
             {categories.length === 0 ? (
               <div className="text-zinc-400">
                 Nenhuma categoria cadastrada.
               </div>
+            ) : filteredManagedCategories.length === 0 ? (
+              <div className="rounded-lg bg-zinc-800/70 p-4 text-sm text-zinc-500">
+                Nenhuma categoria encontrada.
+              </div>
             ) : (
-              <div className="category-scroll max-h-[55vh] overflow-y-auto space-y-2 pr-2">
-                {categories.map((item) => (
+              <div className="category-scroll min-h-0 flex-1 overflow-y-auto space-y-2 pr-2">
+                {filteredManagedCategories.map((item) => (
                   <div
                     key={item.id}
                     className="bg-zinc-800/70 border border-zinc-700 rounded-lg px-4 py-3"

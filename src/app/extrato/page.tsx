@@ -28,6 +28,7 @@ import {
 import TransactionList from "../../components/TransactionList";
 import LaunchModal from "../../components/LaunchModal";
 import SwitchControl from "../../components/SwitchControl";
+import { useModalKeyboardActions } from "../../hooks/useModalKeyboardActions";
 import type { FinanceAccount } from "../../services/accountService";
 
 type MonthDoc = {
@@ -778,6 +779,21 @@ function ExtratoContent() {
     setItemToDelete(null);
     toast.success("Lancamento excluido com sucesso.");
   };
+
+  useModalKeyboardActions({
+    enabled: showEdit,
+    onCancel: closeEdit,
+    cancelDisabled: saving,
+  });
+
+  useModalKeyboardActions({
+    enabled: showDelete,
+    onCancel: () => {
+      setShowDelete(false);
+      setItemToDelete(null);
+    },
+    onConfirm: confirmDelete,
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-6 py-6">

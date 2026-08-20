@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Eye,
@@ -35,7 +35,7 @@ import {
 } from "../../services/installmentPurchaseService";
 
 import {
-  formatAccountNameWithDueDay,
+  getCreditCardClosingDay,
   getAccountsByMonth,
   isCreditCardAccount,
 } from "../../services/accountService";
@@ -45,6 +45,7 @@ import type { FinanceAccount } from "../../services/accountService";
 import LaunchModal from "../../components/LaunchModal";
 import EditAccountModal from "../../components/EditAccountModal";
 import SwitchControl from "../../components/SwitchControl";
+import { useModalKeyboardActions } from "../../hooks/useModalKeyboardActions";
 
 const ALL_LAUNCHERS = "all";
 
@@ -146,6 +147,14 @@ export default function MobileDashboard() {
 
   const [showValues, setShowValues] =
     useState(false);
+  const [
+    creditCardSlideIndex,
+    setCreditCardSlideIndex,
+  ] = useState(0);
+  const creditCardCarouselRef =
+    useRef<HTMLDivElement | null>(null);
+  const creditCardLoopTimeoutRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [launcherFilter, setLauncherFilter] =
     useState<LauncherFilter>(ALL_LAUNCHERS);
@@ -633,6 +642,56 @@ export default function MobileDashboard() {
     }
   };
 
+  useModalKeyboardActions({
+    enabled: showMoreOptionsModal,
+    onCancel: () => setShowMoreOptionsModal(false),
+  });
+
+  useModalKeyboardActions({
+    enabled: showDeleteAccountModal,
+    onCancel: () => {
+      if (isDeletingAccount) return;
+      setShowDeleteAccountModal(false);
+    },
+    onConfirm: confirmDeleteAccount,
+    cancelDisabled: isDeletingAccount,
+    confirmDisabled: isDeletingAccount,
+  });
+
+  useModalKeyboardActions({
+    enabled: showMembersModal && !showAddMemberModal && !memberToDelete,
+    onCancel: () => setShowMembersModal(false),
+  });
+
+  useModalKeyboardActions({
+    enabled: showAddMemberModal,
+    onCancel: closeAddMember,
+    cancelDisabled: isSavingMember,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(memberToDelete),
+    onCancel: () => {
+      if (isDeletingMember) return;
+      setMemberToDelete(null);
+    },
+    onConfirm: confirmDeleteMember,
+    cancelDisabled: isDeletingMember,
+    confirmDisabled: isDeletingMember,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(editTransaction),
+    onCancel: closeEditTransaction,
+    onConfirm: saveEditTransaction,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(deleteTransactionData),
+    onCancel: () => setDeleteTransactionData(null),
+    onConfirm: confirmDeleteTransaction,
+  });
+
   // 🔹 carregar meses
   useEffect(() => {
     const load = async () => {
@@ -787,22 +846,117 @@ export default function MobileDashboard() {
     );
   };
 
-  const cartaoAccount =
-    accounts.find(
-      (a) =>
-        isCreditCardAccount(a) &&
-        a.isPrimaryCreditCard === true
-    ) ||
-    accounts.find((a) =>
-      isCreditCardAccount(a)
+  const creditCardAccounts =
+    accounts.filter((account) =>
+      isCreditCardAccount(account)
     );
 
-  const cartao =
-    cartaoAccount
-      ? getAccountValue(
-          cartaoAccount
-        )
-      : 0;
+  const getCreditCardDateInfo = (
+    account: FinanceAccount
+  ) => {
+    const closingDay =
+      getCreditCardClosingDay(account);
+    const dueDay =
+      Number(account.dia_vencimento);
+
+    return Number.isInteger(dueDay) &&
+      dueDay >= 1 &&
+      dueDay <= 31
+      ? `Fecha dia ${closingDay} • Vence dia ${dueDay}`
+      : `Fecha dia ${closingDay}`;
+  };
+
+  const creditCardSlides =
+    creditCardAccounts.length > 1
+      ? [
+          {
+            id: "all",
+            account: null,
+            label: "Total Cartões",
+            detail: "",
+            value: creditCardAccounts.reduce(
+              (sum, account) =>
+                sum + getAccountValue(account),
+              0
+            ),
+          },
+          ...creditCardAccounts.map((account) => ({
+            id: account.id,
+            account,
+            label: account.name,
+            detail: getCreditCardDateInfo(account),
+            value: getAccountValue(account),
+          })),
+        ]
+      : creditCardAccounts.map((account) => ({
+          id: account.id,
+          account,
+          label: account.name,
+          detail: getCreditCardDateInfo(account),
+          value: getAccountValue(account),
+        }));
+
+  const creditCardCarouselSlides =
+    creditCardSlides.length > 1
+      ? [
+          ...creditCardSlides,
+          {
+            ...creditCardSlides[0],
+            id: `${creditCardSlides[0].id}-loop`,
+          },
+        ]
+      : creditCardSlides;
+
+  const handleCreditCardScroll = (
+    event: React.UIEvent<HTMLDivElement>
+  ) => {
+    const { scrollLeft, clientWidth } =
+      event.currentTarget;
+
+    if (!clientWidth) return;
+
+    const nextIndex =
+      Math.round(scrollLeft / clientWidth);
+
+    if (
+      creditCardSlides.length > 1 &&
+      nextIndex >= creditCardSlides.length
+    ) {
+      setCreditCardSlideIndex(0);
+
+      if (creditCardLoopTimeoutRef.current) {
+        clearTimeout(creditCardLoopTimeoutRef.current);
+      }
+
+      creditCardLoopTimeoutRef.current = setTimeout(() => {
+        creditCardCarouselRef.current?.scrollTo({
+          left: 0,
+          behavior: "instant",
+        });
+      }, 180);
+
+      return;
+    }
+
+    setCreditCardSlideIndex(nextIndex);
+  };
+
+  useEffect(() => {
+    if (creditCardSlideIndex < creditCardSlides.length) return;
+
+    setCreditCardSlideIndex(0);
+  }, [
+    creditCardSlideIndex,
+    creditCardSlides.length,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (creditCardLoopTimeoutRef.current) {
+        clearTimeout(creditCardLoopTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const filteredTransactions =
     transactions.filter((transaction) => {
@@ -1068,54 +1222,83 @@ export default function MobileDashboard() {
         </div>
       )}
 
-      {/* CARTAO DE CREDITO PRINCIPAL */}
-      <div className="bg-purple-600 p-5 rounded-2xl">
-
-        <div className="flex justify-between items-center">
-
-          <p
-            className="text-sm opacity-80"
-            onClick={() => {
-              if (
-                cartaoAccount &&
-                !isCreditCardAccount(
-                  cartaoAccount
-                )
-              ) {
-                setDetailsAccount(
-                  cartaoAccount
-                );
-              }
-            }}
+      {/* CARTOES DE CREDITO */}
+      {creditCardSlides.length > 0 && (
+        <div>
+          <div
+            ref={creditCardCarouselRef}
+            className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth rounded-2xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            onScroll={handleCreditCardScroll}
           >
-            {cartaoAccount
-              ? formatAccountNameWithDueDay(
-                  cartaoAccount
-                )
-              : "Cartão de crédito principal"}
-          </p>
+            {creditCardCarouselSlides.map((slide) => (
+              <div
+                key={slide.id}
+                className="min-w-full snap-center bg-purple-600 px-4 pb-2.5 pt-3.5 rounded-2xl"
+              >
+                <div className="flex justify-between items-start gap-3">
+                  <div className="min-w-0">
+                    <p
+                      className="truncate text-sm opacity-90"
+                      onClick={() => {
+                        if (slide.account) {
+                          setDetailsAccount(slide.account);
+                        }
+                      }}
+                    >
+                      {slide.label}
+                    </p>
 
-          <button
-            onClick={() =>
-              setShowValues(
-                (prev) => !prev
-              )
-            }
-          >
-            {showValues ? (
-              <EyeOff size={20} />
-            ) : (
-              <Eye size={20} />
-            )}
-          </button>
+                    {slide.detail && (
+                      <p className="mt-1 truncate text-[11px] font-medium text-purple-100/70">
+                        {slide.detail}
+                      </p>
+                    )}
+                  </div>
 
+                  <button
+                    onClick={() =>
+                      setShowValues(
+                        (prev) => !prev
+                      )
+                    }
+                    type="button"
+                    aria-label={
+                      showValues
+                        ? "Ocultar valores"
+                        : "Mostrar valores"
+                    }
+                  >
+                    {showValues ? (
+                      <EyeOff size={20} />
+                    ) : (
+                      <Eye size={20} />
+                    )}
+                  </button>
+                </div>
+
+                <h1 className="text-3xl font-bold leading-tight mt-0.5">
+                  {renderValue(slide.value)}
+                </h1>
+              </div>
+            ))}
+          </div>
+
+          {creditCardSlides.length > 1 && (
+            <div className="mt-3 flex justify-center gap-1.5">
+              {creditCardSlides.map((slide, index) => (
+                <span
+                  key={slide.id}
+                  className={`h-1.5 rounded-full transition-all ${
+                    creditCardSlideIndex === index
+                      ? "w-5 bg-purple-300"
+                      : "w-1.5 bg-zinc-700"
+                  }`}
+                />
+              ))}
+            </div>
+          )}
         </div>
-
-        <h1 className="text-3xl font-bold mt-2">
-          {renderValue(cartao)}
-        </h1>
-
-      </div>
+      )}
 
       {/* ULTIMOS LANCAMENTOS */}
       <div className="bg-zinc-900 p-4 rounded-2xl">

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createAccount } from "../services/accountService";
 import type { FinanceAccount } from "../services/accountService";
+import { useModalKeyboardActions } from "../hooks/useModalKeyboardActions";
 import SwitchControl from "./SwitchControl";
 
 type Props = {
@@ -101,7 +102,15 @@ export default function CreateAccountModal({
     }
   }, [open, supportsInstallments, type]);
 
-  if (!open) return null;
+  const handleClose = () => {
+    setName("");
+    setIsCreditCard(false);
+    setValue("");
+    setDueDay("");
+    setClosingDay("");
+    setInstallmentTotal("");
+    onClose();
+  };
 
   const handleCreate = async () => {
     if (!monthId || !name.trim() || !type) return;
@@ -186,15 +195,16 @@ export default function CreateAccountModal({
 
     setAccounts((prev) => [...prev, newAcc]);
 
-    setName("");
-    setIsCreditCard(false);
-    setValue("");
-    setDueDay("");
-    setClosingDay("");
-    setInstallmentTotal("");
-    onClose();
+    handleClose();
     toast.success("Conta criada com sucesso.");
   };
+
+  useModalKeyboardActions({
+    enabled: open,
+    onCancel: handleClose,
+  });
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
@@ -303,15 +313,7 @@ export default function CreateAccountModal({
           </button>
 
           <button
-            onClick={() => {
-              setName("");
-              setIsCreditCard(false);
-              setValue("");
-              setDueDay("");
-              setClosingDay("");
-              setInstallmentTotal("");
-              onClose();
-            }}
+            onClick={handleClose}
             className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition"
             type="button"
           >

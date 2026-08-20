@@ -37,6 +37,7 @@ import LaunchModal from "../../components/LaunchModal";
 import CreateAccountModal from "../../components/CreateAccountModal";
 import EditAccountModal from "../../components/EditAccountModal";
 import { useFinance } from "../../hooks/useFinance";
+import { useModalKeyboardActions } from "../../hooks/useModalKeyboardActions";
 
 const ALL_LAUNCHERS = "all";
 
@@ -200,18 +201,9 @@ export default function DashboardPage() {
       .filter((a) => a.type === type)
       .reduce((sum, acc) => sum + getAccountValue(acc), 0);
 
-  const primaryCreditCard =
-    accounts.find(
-      (acc) =>
-        isCreditCardAccount(acc) &&
-        acc.isPrimaryCreditCard === true
-    ) || accounts.find((acc) => isCreditCardAccount(acc));
-
   const getExpectedAccountValue = (acc: any) => {
     if (isCreditCardAccount(acc)) {
-      if (acc.id !== primaryCreditCard?.id) return 0;
-
-      return Number(acc.expectedValue || 0) || getAccountValue(acc);
+      return Number(acc.expectedValue || 0);
     }
 
     return getAccountValue(acc);
@@ -719,6 +711,92 @@ export default function DashboardPage() {
     setPixDeletingTransaction(null);
     toast.success("PIX excluido com sucesso.");
   };
+
+  useModalKeyboardActions({
+    enabled: showMoreOptionsModal,
+    onCancel: () => setShowMoreOptionsModal(false),
+  });
+
+  useModalKeyboardActions({
+    enabled: showDeleteAccountModal,
+    onCancel: () => {
+      if (isDeletingAccount) return;
+      setShowDeleteAccountModal(false);
+    },
+    onConfirm: confirmDeleteAccount,
+    cancelDisabled: isDeletingAccount,
+    confirmDisabled: isDeletingAccount,
+  });
+
+  useModalKeyboardActions({
+    enabled: showMembersModal && !showAddMemberModal && !memberToDelete,
+    onCancel: () => setShowMembersModal(false),
+  });
+
+  useModalKeyboardActions({
+    enabled: showAddMemberModal,
+    onCancel: closeAddMember,
+    cancelDisabled: isSavingMember,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(memberToDelete),
+    onCancel: () => {
+      if (isDeletingMember) return;
+      setMemberToDelete(null);
+    },
+    onConfirm: confirmDeleteMember,
+    cancelDisabled: isDeletingMember,
+    confirmDisabled: isDeletingMember,
+  });
+
+  useModalKeyboardActions({
+    enabled: showEdit,
+    onCancel: () => setShowEdit(false),
+  });
+
+  useModalKeyboardActions({
+    enabled: showExpectedEdit,
+    onCancel: () => {
+      setShowExpectedEdit(false);
+      setExpectedAccount(null);
+      setExpectedValue("");
+    },
+  });
+
+  useModalKeyboardActions({
+    enabled: showDeleteModal,
+    onCancel: () => {
+      setShowDeleteModal(false);
+      setAccountToDelete(null);
+    },
+    onConfirm: confirmDelete,
+  });
+
+  useModalKeyboardActions({
+    enabled: showCreateMonthModal,
+    onCancel: () => setShowCreateMonthModal(false),
+    onConfirm: confirmCreateNext,
+  });
+
+  useModalKeyboardActions({
+    enabled:
+      Boolean(pixAccount) &&
+      !pixEditingTransaction &&
+      !pixDeletingTransaction,
+    onCancel: closePixHistory,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(pixEditingTransaction),
+    onCancel: cancelPixEdit,
+  });
+
+  useModalKeyboardActions({
+    enabled: Boolean(pixDeletingTransaction),
+    onCancel: () => setPixDeletingTransaction(null),
+    onConfirm: confirmDeletePixTransaction,
+  });
 
   const handleReorderAccounts = async (
     type: string,

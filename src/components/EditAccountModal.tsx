@@ -10,6 +10,7 @@ import {
   isPixAccount,
   updateAccountDetails,
 } from "../services/accountService";
+import { useModalKeyboardActions } from "../hooks/useModalKeyboardActions";
 import SwitchControl from "./SwitchControl";
 
 type Props = {
@@ -325,6 +326,29 @@ function EditAccountForm({
     handleClose();
     toast.success("Conta atualizada com sucesso.");
   };
+
+  useModalKeyboardActions({
+    enabled: !showArchiveConfirm && !showPrimaryConfirm,
+    onCancel: handleClose,
+  });
+
+  useModalKeyboardActions({
+    enabled: showPrimaryConfirm,
+    onCancel: () => setShowPrimaryConfirm(false),
+    onConfirm: () => {
+      setShowPrimaryConfirm(false);
+      handleSave({ skipPrimaryConfirm: true });
+    },
+  });
+
+  useModalKeyboardActions({
+    enabled: showArchiveConfirm,
+    onCancel: () => setShowArchiveConfirm(false),
+    onConfirm: () => {
+      setShowArchiveConfirm(false);
+      handleSave({ skipArchiveConfirm: true });
+    },
+  });
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
