@@ -160,6 +160,9 @@ const getInstallmentGroupId = () => {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
+const CUSTOM_INSTALLMENTS = "custom";
+const MAX_INSTALLMENTS = 60;
+
 const getCreditCardKey = (account: FinanceAccount) =>
   String(account.creditCardKey || account.id || "");
 
@@ -311,6 +314,8 @@ export default function LaunchModal({
     useState("");
   const [installments, setInstallments] =
     useState("1");
+  const [customInstallments, setCustomInstallments] =
+    useState("");
 
   const [date, setDate] =
     useState("");
@@ -388,6 +393,7 @@ export default function LaunchModal({
     setValue("");
     setNote("");
     setInstallments("1");
+    setCustomInstallments("");
     setDate(
       getTodayDateKey()
     );
@@ -483,6 +489,8 @@ export default function LaunchModal({
     setIsCategorySelectOpen(false);
     setCategoryManageSearch("");
     setNote("");
+    setInstallments("1");
+    setCustomInstallments("");
 
     setDate(
       getTodayDateKey()
@@ -745,7 +753,9 @@ export default function LaunchModal({
       const parsedValue =
         parseCurrency(value);
       const parsedInstallments = isCreditCardSelected
-        ? Number(installments || 1)
+        ? installments === CUSTOM_INSTALLMENTS
+          ? Number(customInstallments || 0)
+          : Number(installments || 1)
         : 1;
 
       if (!parsedValue) {
@@ -760,9 +770,9 @@ export default function LaunchModal({
         isCreditCardSelected &&
         (!Number.isInteger(parsedInstallments) ||
           parsedInstallments < 1 ||
-          parsedInstallments > 12)
+          parsedInstallments > MAX_INSTALLMENTS)
       ) {
-        toast.error("Selecione o numero de parcelas.");
+        toast.error(`Informe entre 1 e ${MAX_INSTALLMENTS} parcelas.`);
         return;
       }
 
@@ -963,6 +973,7 @@ export default function LaunchModal({
           setCategory("");
           setNote("");
           setInstallments("1");
+          setCustomInstallments("");
           setDate(getTodayDateKey());
           onClose();
 
@@ -1175,6 +1186,7 @@ export default function LaunchModal({
         setCategory("");
         setNote("");
         setInstallments("1");
+        setCustomInstallments("");
 
         setDate(
           getTodayDateKey()
@@ -1216,7 +1228,7 @@ export default function LaunchModal({
 
         {/* 🔥 VALOR */}
         <label className="block">
-          <span className={fieldLabelClass}>Valor</span>
+          <span className={fieldLabelClass}>Valor total</span>
           <input
             type="tel"
             inputMode="decimal"
@@ -1228,7 +1240,7 @@ export default function LaunchModal({
                 )
               )
             }
-            placeholder="Valor"
+            placeholder="Valor total"
             required
             disabled={isSaving}
             className="w-full p-2 bg-zinc-800 rounded"
@@ -1263,6 +1275,7 @@ export default function LaunchModal({
                   setCategorySearch("");
                   setIsCategorySelectOpen(false);
                   setInstallments("1");
+                  setCustomInstallments("");
                 }
               }}
               required
@@ -1289,22 +1302,54 @@ export default function LaunchModal({
           {isCreditCardSelected && (
             <label className="w-20 shrink-0">
               <span className={fieldLabelClass}>Parcelas</span>
-              <select
-                value={installments}
-                onChange={(e) => setInstallments(e.target.value)}
-                disabled={isSaving}
-                className="w-full p-2 bg-zinc-800 rounded"
-                aria-label="Parcelas"
-                title="Parcelas"
-              >
-                {Array.from({ length: 12 }, (_, index) => index + 1).map(
-                  (item) => (
-                    <option key={item} value={item}>
-                      {item}x
-                    </option>
-                  )
-                )}
-              </select>
+              {installments === CUSTOM_INSTALLMENTS ? (
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={customInstallments}
+                  onChange={(event) =>
+                    setCustomInstallments(event.target.value.replace(/\D/g, ""))
+                  }
+                  onBlur={() => {
+                    if (customInstallments) return;
+                    setInstallments("1");
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Escape") return;
+                    setCustomInstallments("");
+                    setInstallments("1");
+                  }}
+                  placeholder="Qtd"
+                  disabled={isSaving}
+                  className="w-full p-2 bg-zinc-800 rounded"
+                  aria-label="Número de parcelas"
+                  title="Número de parcelas"
+                  autoFocus
+                />
+              ) : (
+                <select
+                  value={installments}
+                  onChange={(e) => {
+                    setInstallments(e.target.value);
+                    if (e.target.value !== CUSTOM_INSTALLMENTS) {
+                      setCustomInstallments("");
+                    }
+                  }}
+                  disabled={isSaving}
+                  className="w-full p-2 bg-zinc-800 rounded"
+                  aria-label="Parcelas"
+                  title="Parcelas"
+                >
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map(
+                    (item) => (
+                      <option key={item} value={item}>
+                        {item}x
+                      </option>
+                    )
+                  )}
+                  <option value={CUSTOM_INSTALLMENTS}>Outro</option>
+                </select>
+              )}
             </label>
           )}
         </div>
