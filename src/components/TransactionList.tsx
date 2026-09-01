@@ -1,5 +1,8 @@
 "use client";
 
+import { List, Rows3, Trash2 } from "lucide-react";
+import { useState } from "react";
+
 type TransactionItem = {
   id: string;
   transactionId: string;
@@ -37,6 +40,10 @@ export default function TransactionList({
   onEdit,
   onDelete,
 }: Props) {
+  const [listViewGroups, setListViewGroups] = useState<Record<string, boolean>>(
+    {}
+  );
+
   const formatDate = (dateString: string) => {
     const dateKey = String(dateString || "").slice(0, 10);
     const match = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -54,72 +61,162 @@ export default function TransactionList({
     });
   };
 
+  const getDisplayCategory = (item: TransactionItem) => {
+    if (item.transactionType === "installment_anticipation_discount") {
+      return "Desconto antecipação";
+    }
+
+    return item.category?.trim() || "Lançamento";
+  };
+
   return (
     <div className="space-y-5">
-      {groups.map((group) => (
-        <div
-          key={group.monthLabel}
-          className="bg-zinc-900/70 border border-zinc-800 rounded-2xl overflow-hidden"
-        >
-          <div className="px-4 py-3 border-b border-zinc-800">
-            <h2 className="font-semibold text-zinc-100">{group.monthLabel}</h2>
-          </div>
+      {groups.map((group) => {
+        const isListView = listViewGroups[group.monthLabel] === true;
+        const categoryTotals = Object.entries(
+          group.items.reduce<Record<string, number>>((totals, item) => {
+            const category = getDisplayCategory(item);
+            totals[category] = (totals[category] || 0) + Number(item.value || 0);
 
-          <div className="divide-y divide-zinc-800">
-            {group.items.map((item) => {
-              const hasCategory = item.category?.trim();
-              const hasNote = item.note?.trim();
-              const displayCategory =
-                item.transactionType === "installment_anticipation_discount"
-                  ? "Desconto antecipação"
-                  : hasCategory
-                  ? item.category
-                  : "Lançamento";
+            return totals;
+          }, {})
+        ).sort(([categoryA], [categoryB]) =>
+          categoryA.localeCompare(categoryB, "pt-BR")
+        );
+        const groupTotal = categoryTotals.reduce(
+          (sum, [, value]) => sum + value,
+          0
+        );
 
-              return (
-                <div
-                  key={item.id}
-                  className="grid grid-cols-[90px_1fr_140px_30px] gap-3 px-4 py-3 items-center hover:bg-zinc-800/40 transition"
-                >
-                  <span className="text-sm text-zinc-300">
-                    {formatDate(item.date)}
-                  </span>
+        return (
+          <div
+            key={group.monthLabel}
+            className="bg-zinc-900/70 border border-zinc-800 rounded-2xl overflow-hidden"
+          >
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
+              <h2 className="font-semibold text-zinc-100">
+                {group.monthLabel}
+              </h2>
 
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate">
-                      {displayCategory}
-                    </p>
+              <button
+                onClick={() =>
+                  setListViewGroups((current) => ({
+                    ...current,
+                    [group.monthLabel]: !current[group.monthLabel],
+                  }))
+                }
+                type="button"
+                className={`grid h-8 w-8 place-items-center rounded-lg border transition ${
+                  isListView
+                    ? "border-purple-400/40 bg-purple-500/20 text-purple-100"
+                    : "border-zinc-700 bg-zinc-800/70 text-zinc-300 hover:bg-zinc-700"
+                }`}
+                aria-label={
+                  isListView
+                    ? "Voltar para lancamentos"
+                    : "Ver resumo por categoria"
+                }
+                title={
+                  isListView
+                    ? "Voltar para lancamentos"
+                    : "Ver resumo por categoria"
+                }
+              >
+                {isListView ? <Rows3 size={16} /> : <List size={16} />}
+              </button>
+            </div>
 
-                    {hasNote && (
-                      <p className="text-xs text-zinc-400 truncate">
-                        {item.note}
-                      </p>
-                    )}
-                  </div>
+            {isListView ? (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[360px] text-sm">
+                  <thead className="bg-zinc-800/80 text-xs text-zinc-300">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">
+                        Categoria
+                      </th>
+                      <th className="px-4 py-3 text-right font-semibold">
+                        Valor
+                      </th>
+                    </tr>
+                  </thead>
 
-                  <div className="text-right">
-                    <span
-                      onClick={() => onEdit(item)}
-                      className="text-red-400 font-semibold cursor-pointer hover:underline"
+                  <tbody className="divide-y divide-zinc-800">
+                    {categoryTotals.map(([category, value]) => (
+                      <tr
+                        key={category}
+                        className="hover:bg-zinc-800/40 transition"
+                      >
+                        <td className="px-4 py-3 font-semibold text-zinc-100">
+                          {category}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-red-400">
+                          {showValues ? formatMoney(value) : "R$ ••••••"}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-zinc-700 bg-zinc-800/90">
+                      <td className="px-4 py-3 font-bold text-zinc-100">
+                        Total
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-green-400">
+                        {showValues ? formatMoney(groupTotal) : "R$ ••••••"}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="divide-y divide-zinc-800">
+                {group.items.map((item) => {
+                  const hasNote = item.note?.trim();
+                  const displayCategory = getDisplayCategory(item);
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="grid grid-cols-[90px_1fr_140px_30px] gap-3 px-4 py-3 items-center hover:bg-zinc-800/40 transition"
                     >
-                      {showValues ? formatMoney(item.value) : "R$ ••••••"}
-                    </span>
-                  </div>
+                      <span className="text-sm text-zinc-300">
+                        {formatDate(item.date)}
+                      </span>
 
-                  <button
-                    onClick={() => onDelete(item)}
-                    className="text-zinc-400 hover:text-red-400"
-                    title="Excluir"
-                    type="button"
-                  >
-                    🗑
-                  </button>
-                </div>
-              );
-            })}
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate">
+                          {displayCategory}
+                        </p>
+
+                        {hasNote && (
+                          <p className="text-xs text-zinc-400 truncate">
+                            {item.note}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="text-right">
+                        <span
+                          onClick={() => onEdit(item)}
+                          className="text-red-400 font-semibold cursor-pointer hover:underline"
+                        >
+                          {showValues ? formatMoney(item.value) : "R$ ••••••"}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => onDelete(item)}
+                        className="text-zinc-400 hover:text-red-400"
+                        title="Excluir"
+                        type="button"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
