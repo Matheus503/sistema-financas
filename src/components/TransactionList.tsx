@@ -1,7 +1,8 @@
 "use client";
 
-import { List, Rows3, Trash2 } from "lucide-react";
+import { FileCheck2, List, Rows3, Trash2 } from "lucide-react";
 import { useState } from "react";
+import InvoiceReconciliationModal from "./InvoiceReconciliationModal";
 
 type TransactionItem = {
   id: string;
@@ -17,6 +18,9 @@ type TransactionItem = {
   userName?: string;
   launcherId?: string;
   launcherName?: string;
+  accountName?: string;
+  installmentCurrent?: number;
+  installmentTotal?: number;
   transactionType?: string;
 };
 
@@ -43,6 +47,8 @@ export default function TransactionList({
   const [listViewGroups, setListViewGroups] = useState<Record<string, boolean>>(
     {}
   );
+  const [reconciliationGroup, setReconciliationGroup] =
+    useState<TransactionGroup | null>(null);
 
   const formatDate = (dateString: string) => {
     const dateKey = String(dateString || "").slice(0, 10);
@@ -94,35 +100,47 @@ export default function TransactionList({
             className="bg-zinc-900/70 border border-zinc-800 rounded-2xl overflow-hidden"
           >
             <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
-              <h2 className="font-semibold text-zinc-100">
-                {group.monthLabel}
-              </h2>
+              <div className="flex min-w-0 items-center gap-3">
+                <h2 className="font-semibold text-zinc-100">
+                  {group.monthLabel}
+                </h2>
+
+                <button
+                  onClick={() =>
+                    setListViewGroups((current) => ({
+                      ...current,
+                      [group.monthLabel]: !current[group.monthLabel],
+                    }))
+                  }
+                  type="button"
+                  className={`grid h-8 w-8 place-items-center rounded-lg border transition ${
+                    isListView
+                      ? "border-purple-400/40 bg-purple-500/20 text-purple-100"
+                      : "border-zinc-700 bg-zinc-800/70 text-zinc-300 hover:bg-zinc-700"
+                  }`}
+                  aria-label={
+                    isListView
+                      ? "Voltar para lancamentos"
+                      : "Ver resumo por categoria"
+                  }
+                  title={
+                    isListView
+                      ? "Voltar para lancamentos"
+                      : "Ver resumo por categoria"
+                  }
+                >
+                  {isListView ? <Rows3 size={16} /> : <List size={16} />}
+                </button>
+              </div>
 
               <button
-                onClick={() =>
-                  setListViewGroups((current) => ({
-                    ...current,
-                    [group.monthLabel]: !current[group.monthLabel],
-                  }))
-                }
+                onClick={() => setReconciliationGroup(group)}
                 type="button"
-                className={`grid h-8 w-8 place-items-center rounded-lg border transition ${
-                  isListView
-                    ? "border-purple-400/40 bg-purple-500/20 text-purple-100"
-                    : "border-zinc-700 bg-zinc-800/70 text-zinc-300 hover:bg-zinc-700"
-                }`}
-                aria-label={
-                  isListView
-                    ? "Voltar para lancamentos"
-                    : "Ver resumo por categoria"
-                }
-                title={
-                  isListView
-                    ? "Voltar para lancamentos"
-                    : "Ver resumo por categoria"
-                }
+                className="ml-auto grid h-9 w-9 place-items-center rounded-lg border border-zinc-700 bg-zinc-800/70 text-zinc-300 transition hover:bg-zinc-700 hover:text-white"
+                aria-label="Conciliar fatura"
+                title="Conciliar fatura"
               >
-                {isListView ? <Rows3 size={16} /> : <List size={16} />}
+                <FileCheck2 size={17} />
               </button>
             </div>
 
@@ -217,6 +235,26 @@ export default function TransactionList({
           </div>
         );
       })}
+
+      {reconciliationGroup && (
+        <InvoiceReconciliationModal
+          open={Boolean(reconciliationGroup)}
+          monthLabel={reconciliationGroup.monthLabel}
+          systemItems={reconciliationGroup.items.map((item) => ({
+            id: item.id,
+            transactionId: item.transactionId,
+            date: item.date,
+            value: item.value,
+            category: item.category,
+            note: item.note,
+            accountName: item.accountName,
+            installmentCurrent: item.installmentCurrent,
+            installmentTotal: item.installmentTotal,
+            transactionType: item.transactionType,
+          }))}
+          onClose={() => setReconciliationGroup(null)}
+        />
+      )}
     </div>
   );
 }
