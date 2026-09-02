@@ -1,23 +1,30 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, FileUp, XCircle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { FileUp } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { parseNubankCsv } from "../lib/nubankCsvParser";
 import {
   reconcileInvoice,
-  type MatchCandidate,
   type ReconciliationReport,
-  type ScoreReason,
   type SystemInvoiceEntry,
 } from "../lib/invoiceReconciliation";
-import type { NubankEntry } from "../lib/nubankCsvParser";
 
 type Props = {
   open: boolean;
   monthLabel: string;
   systemItems: SystemInvoiceEntry[];
   onClose: () => void;
+};
+
+type DifferenceItem = {
+  id: string;
+  priority: number;
+  title: string;
+  amount: number;
+  description: string;
+  detail?: string;
+  tone: "red" | "yellow" | "orange";
 };
 
 const formatMoney = (value: number) =>
@@ -33,136 +40,105 @@ const formatDate = (value: string) => {
   return `${match[3]}/${match[2]}/${match[1]}`;
 };
 
-const kindLabel: Record<NubankEntry["kind"], string> = {
-  expense: "Despesa",
-  credit_refund: "Credito/estorno",
-  invoice_payment: "Pagamento da fatura",
-  discount: "Desconto",
-  other: "Outros",
+const systemDescription = (entry: SystemInvoiceEntry) =>
+  `${entry.category || "Lançamento"}${entry.note ? ` - ${entry.note}` : ""}`;
+
+const toneClassName = (tone: DifferenceItem["tone"]) => {
+  if (tone === "red") return "border-red-500/25 bg-red-500/10";
+  if (tone === "orange") return "border-orange-500/25 bg-orange-500/10";
+
+  return "border-yellow-500/25 bg-yellow-500/10";
 };
 
-const statusConfig = {
-  conciliated: {
-    label: "Conciliado",
-    className: "border-green-500/30 bg-green-500/15 text-green-100",
-    Icon: CheckCircle2,
-  },
-  partially_conciliated: {
-    label: "Parcialmente conciliado",
-    className: "border-yellow-500/30 bg-yellow-500/15 text-yellow-100",
-    Icon: AlertTriangle,
-  },
-  not_conciliated: {
-    label: "Nao conciliado",
-    className: "border-red-500/30 bg-red-500/15 text-red-100",
-    Icon: XCircle,
-  },
+const buildOtherDifferenceItems = (report: ReconciliationReport) => {
+  const items: DifferenceItem[] = [];
+
+  report.duplicates.forEach((duplicate, index) => {
+    items.push({
+      id: `duplicate-${index}`,
+      priority: 2,
+      title: "Possível duplicidade",
+      amount: duplicate.potentialDuplicateValue,
+      description: `Valor ${formatMoney(duplicate.value)} aparece ${duplicate.nubankCount}x no Nubank e ${duplicate.systemCount}x no sistema.`,
+      detail:
+        duplicate.systemEntries.length > duplicate.nubankEntries.length
+          ? "Pode haver lançamento duplicado no sistema."
+          : "Pode haver lançamento faltando no sistema.",
+      tone: "red",
+    });
+  });
+
+  report.valueDifferences.forEach((match) => {
+    items.push({
+      id: `value-${match.nubank.id}-${match.system.id}`,
+      priority: 4,
+      title: "Possível diferença de valor",
+      amount: match.valueDifference,
+      description: `${match.nubank.title} x ${systemDescription(match.system)}`,
+      detail: `Nubank ${formatMoney(match.nubank.amount)} | Sistema ${formatMoney(match.system.value)}`,
+      tone: "orange",
+    });
+  });
+
+  report.reviewMatches.forEach((match) => {
+    if (match.hasValueDifference) return;
+
+    items.push({
+      id: `review-${match.nubank.id}-${match.system.id}`,
+      priority: 5,
+      title: "Correspondência para revisar",
+      amount: match.nubank.amount,
+      description: `${match.nubank.title} x ${systemDescription(match.system)}`,
+      detail: `Score ${match.score}% - ${match.reasons
+        .map((reason) => reason.text)
+        .join("; ")}`,
+      tone: "yellow",
+    });
+  });
+
+  report.dateDifferences.forEach((match) => {
+    if (match.confidence !== "high") return;
+
+    items.push({
+      id: `date-${match.nubank.id}-${match.system.id}`,
+      priority: 6,
+      title: "Data diferente",
+      amount: match.nubank.amount,
+      description: `${match.nubank.title} x ${systemDescription(match.system)}`,
+      detail: `Nubank ${formatDate(match.nubank.date)} | Sistema ${formatDate(
+        match.system.date,
+      )}`,
+      tone: "yellow",
+    });
+  });
+
+  return items.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return Math.abs(b.amount) - Math.abs(a.amount);
+  });
 };
 
-const reasonClassName = (reason: ScoreReason) => {
-  if (reason.tone === "positive") return "text-green-300";
-  if (reason.tone === "negative") return "text-red-300";
-  if (reason.tone === "warning") return "text-yellow-300";
-
-  return "text-zinc-400";
-};
-
-const EntryLine = ({
-  label,
-  date,
-  description,
-  value,
-}: {
-  label: string;
-  date: string;
-  description: string;
-  value: number;
-}) => (
-  <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
-    <div className="mb-1 flex items-center justify-between gap-3 text-xs text-zinc-500">
-      <span>{label}</span>
-      <span>{formatDate(date)}</span>
-    </div>
-    <div className="flex items-start justify-between gap-3">
-      <span className="min-w-0 text-zinc-100">{description || "-"}</span>
-      <span className="shrink-0 font-semibold text-red-400">
-        {formatMoney(value)}
-      </span>
+const DifferenceCard = ({ item }: { item: DifferenceItem }) => (
+  <div className={`rounded-xl border p-4 ${toneClassName(item.tone)}`}>
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <div className="font-semibold text-zinc-100">{item.title}</div>
+        <div className="mt-1 text-sm text-zinc-300">{item.description}</div>
+        {item.detail && (
+          <div className="mt-1 text-xs text-zinc-400">{item.detail}</div>
+        )}
+      </div>
+      <div className="shrink-0 text-right font-bold text-red-300">
+        {formatMoney(item.amount)}
+      </div>
     </div>
   </div>
 );
 
-const MatchCard = ({ match }: { match: MatchCandidate }) => (
-  <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
-    <div className="mb-3 flex items-center justify-between gap-3">
-      <div className="text-sm font-semibold text-zinc-100">
-        Score {match.score}%
-      </div>
-      <div className="text-xs text-zinc-400">
-        {match.confidence === "high"
-          ? "Alta confianca"
-          : match.confidence === "review"
-          ? "Revisar"
-          : "Baixa confianca"}
-      </div>
-    </div>
-
-    <div className="grid gap-2 md:grid-cols-2">
-      <EntryLine
-        label="Nubank"
-        date={match.nubank.date}
-        description={match.nubank.title}
-        value={match.nubank.amount}
-      />
-      <EntryLine
-        label="Sistema"
-        date={match.system.date}
-        description={`${match.system.category || "Lancamento"}${
-          match.system.note ? ` - ${match.system.note}` : ""
-        }`}
-        value={match.system.value}
-      />
-    </div>
-
-    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-      {match.reasons.map((reason, index) => (
-        <span
-          key={`${reason.text}-${index}`}
-          className={`rounded-full bg-zinc-800 px-2 py-1 ${reasonClassName(
-            reason
-          )}`}
-        >
-          {reason.text}
-        </span>
-      ))}
-    </div>
+const EmptyColumn = ({ text }: { text: string }) => (
+  <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-500">
+    {text}
   </div>
-);
-
-const Section = ({
-  title,
-  count,
-  children,
-}: {
-  title: string;
-  count: number;
-  children: React.ReactNode;
-}) => (
-  <section className="space-y-3">
-    <div className="flex items-center gap-2">
-      <h3 className="font-semibold text-zinc-100">{title}</h3>
-      <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-        {count}
-      </span>
-    </div>
-    {count === 0 ? (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-sm text-zinc-500">
-        Nada encontrado nesta secao.
-      </div>
-    ) : (
-      children
-    )}
-  </section>
 );
 
 export default function InvoiceReconciliationModal({
@@ -173,21 +149,7 @@ export default function InvoiceReconciliationModal({
 }: Props) {
   const [report, setReport] = useState<ReconciliationReport | null>(null);
   const [fileName, setFileName] = useState("");
-  const [onlyDivergences, setOnlyDivergences] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
-
-  const hasDivergences = useMemo(() => {
-    if (!report) return false;
-
-    return (
-      report.audit.missingInSystem +
-        report.audit.missingInNubank +
-        report.audit.duplicates +
-        report.audit.valueDifferences +
-        report.audit.reviewMatches >
-      0
-    );
-  }, [report]);
 
   if (!open) return null;
 
@@ -210,18 +172,24 @@ export default function InvoiceReconciliationModal({
       toast.error(
         error instanceof Error
           ? error.message
-          : "Nao foi possivel processar o CSV."
+          : "Nao foi possivel processar o CSV.",
       );
     }
   };
 
-  const status = report ? statusConfig[report.status] : null;
-  const StatusIcon = status?.Icon;
-  const showCleanMatches = Boolean(report && !onlyDivergences);
+  const otherDifferences = report ? buildOtherDifferenceItems(report) : [];
+  const pendingCount = report
+    ? report.missingInSystem.length +
+      report.missingInNubank.length +
+      otherDifferences.length
+    : 0;
+  const differenceHasValue = report
+    ? Math.abs(report.totals.difference) > 0.01
+    : false;
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/75 px-4 py-6">
-      <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-white shadow-2xl">
+      <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-white shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-zinc-800 px-5 py-4">
           <div>
             <h2 className="text-xl font-bold">Conciliação de Fatura</h2>
@@ -237,7 +205,7 @@ export default function InvoiceReconciliationModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="category-scroll flex-1 overflow-y-auto p-5">
           <label
             onDragOver={(event) => {
               event.preventDefault();
@@ -249,16 +217,23 @@ export default function InvoiceReconciliationModal({
               setIsDragging(false);
               processFile(event.dataTransfer.files[0]);
             }}
-            className={`mb-5 flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed p-6 text-center transition ${
+            className={`mb-5 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-dashed p-5 transition ${
               isDragging
                 ? "border-purple-400 bg-purple-500/10"
                 : "border-zinc-700 bg-zinc-900/60 hover:bg-zinc-900"
             }`}
           >
-            <FileUp className="mb-3 text-purple-300" size={28} />
-            <span className="font-semibold">Arraste o CSV do Nubank aqui</span>
-            <span className="mt-1 text-sm text-zinc-400">
-              ou selecione um arquivo para gerar o relatório
+            <div className="flex items-center gap-3">
+              <FileUp className="text-purple-300" size={26} />
+              <div>
+                <div className="font-semibold">CSV do Nubank</div>
+                <div className="text-sm text-zinc-400">
+                  {fileName || "Arraste aqui ou selecione o arquivo"}
+                </div>
+              </div>
+            </div>
+            <span className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold">
+              Selecionar arquivo
             </span>
             <input
               type="file"
@@ -268,252 +243,129 @@ export default function InvoiceReconciliationModal({
             />
           </label>
 
-          {fileName && (
-            <div className="mb-5 text-sm text-zinc-400">
-              Arquivo analisado:{" "}
-              <span className="font-semibold text-zinc-200">{fileName}</span>
-            </div>
-          )}
-
           {!report ? (
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 text-sm text-zinc-400">
-              O CSV será usado apenas nesta análise local da tela. Nenhum dado
-              do arquivo será salvo automaticamente.
+              Nenhum dado será alterado. A conciliação apenas compara o CSV com
+              os lançamentos que já aparecem nesta fatura.
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="grid gap-3 md:grid-cols-5">
-                {[
-                  ["Total bruto CSV", report.totals.nubankGross],
-                  ["Conciliavel Nubank", report.totals.nubankConciliable],
-                  ["Excluido da conciliacao", report.totals.nubankExcluded],
-                  ["Total sistema", report.totals.system],
-                  ["Diferenca", report.totals.difference],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4"
-                  >
-                    <div className="text-xs text-zinc-500">{label}</div>
-                    <div className="mt-1 text-lg font-bold">
-                      {formatMoney(Number(value))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-[1fr_1fr_220px]">
+            <div className="space-y-5">
+              <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
-                  <div className="text-xs text-zinc-500">
-                    Diferenca explicada
-                  </div>
-                  <div className="mt-1 text-lg font-bold text-green-300">
-                    {formatMoney(report.totals.explained)}
+                  <div className="text-xs text-zinc-500">Nubank comparado</div>
+                  <div className="mt-1 text-xl font-bold">
+                    {formatMoney(report.totals.nubankConciliable)}
                   </div>
                 </div>
                 <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
-                  <div className="text-xs text-zinc-500">
-                    Diferenca residual
+                  <div className="text-xs text-zinc-500">Sistema</div>
+                  <div className="mt-1 text-xl font-bold">
+                    {formatMoney(report.totals.system)}
                   </div>
+                </div>
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
+                  <div className="text-xs text-zinc-500">Diferença</div>
                   <div
-                    className={`mt-1 text-lg font-bold ${
-                      Math.abs(report.totals.residual) > 0.01
-                        ? "text-yellow-300"
-                        : "text-green-300"
+                    className={`mt-1 text-xl font-bold ${
+                      differenceHasValue ? "text-yellow-300" : "text-green-300"
                     }`}
                   >
-                    {formatMoney(report.totals.residual)}
+                    {formatMoney(report.totals.difference)}
                   </div>
                 </div>
-                {status && StatusIcon && (
-                  <div
-                    className={`flex items-center gap-2 rounded-xl border p-4 font-semibold ${status.className}`}
-                  >
-                    <StatusIcon size={20} />
-                    {status.label}
-                  </div>
-                )}
               </div>
 
-              <div className="grid gap-2 md:grid-cols-4 lg:grid-cols-8">
-                {[
-                  ["Nubank", report.audit.nubankTotal],
-                  ["Conciliaveis", report.audit.nubankConciliable],
-                  ["Encontrados", report.audit.matched],
-                  ["Nao encontrados", report.audit.missingInSystem],
-                  ["So no sistema", report.audit.missingInNubank],
-                  ["Duplicidades", report.audit.duplicates],
-                  ["Valor", report.audit.valueDifferences],
-                  ["Data", report.audit.dateDifferences],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2"
-                  >
-                    <div className="text-[11px] text-zinc-500">{label}</div>
-                    <div className="text-lg font-bold">{value}</div>
+              {pendingCount === 0 ? (
+                <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-5 text-sm text-green-100">
+                  Não encontrei diferença entre os lançamentos conciliáveis do
+                  Nubank e os lançamentos desta fatura no sistema.
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <section className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="font-semibold text-zinc-100">
+                          Não lançado no sistema
+                        </h4>
+                        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                          {report.missingInSystem.length}
+                        </span>
+                      </div>
+
+                      {report.missingInSystem.length === 0 ? (
+                        <EmptyColumn text="Nada do Nubank ficou sem lançamento no sistema." />
+                      ) : (
+                        <div className="category-scroll max-h-[52vh] space-y-3 overflow-y-auto pr-1">
+                          {report.missingInSystem.map((entry) => (
+                            <DifferenceCard
+                              key={entry.id}
+                              item={{
+                                id: `missing-system-${entry.id}`,
+                                priority: 3,
+                                title: "Lançamento não realizado",
+                                amount: entry.amount,
+                                description: `${formatDate(entry.date)} - ${entry.title}`,
+                                tone: "red",
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="font-semibold text-zinc-100">
+                          Não existe no Nubank
+                        </h4>
+                        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                          {report.missingInNubank.length}
+                        </span>
+                      </div>
+
+                      {report.missingInNubank.length === 0 ? (
+                        <EmptyColumn text="Nenhum lançamento do sistema ficou sem par no Nubank." />
+                      ) : (
+                        <div className="category-scroll max-h-[52vh] space-y-3 overflow-y-auto pr-1">
+                          {report.missingInNubank.map((entry) => (
+                            <DifferenceCard
+                              key={entry.id}
+                              item={{
+                                id: `missing-nubank-${entry.id}`,
+                                priority: 3,
+                                title: "Não existe no Nubank",
+                                amount: entry.value,
+                                description: `${formatDate(entry.date)} - ${systemDescription(entry)}`,
+                                tone: "red",
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
                   </div>
-                ))}
-              </div>
 
-              <label className="flex items-center gap-2 text-sm text-zinc-300">
-                <input
-                  type="checkbox"
-                  checked={onlyDivergences}
-                  onChange={(event) => setOnlyDivergences(event.target.checked)}
-                  className="h-4 w-4 accent-purple-600"
-                />
-                Somente divergências
-              </label>
+                  {otherDifferences.length > 0 && (
+                    <section className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="font-semibold text-zinc-100">
+                          Outros pontos para revisar
+                        </h4>
+                        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                          {otherDifferences.length}
+                        </span>
+                      </div>
 
-              {!hasDivergences && (
-                <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-100">
-                  Nenhuma divergencia relevante encontrada na conciliacao.
+                      <div className="space-y-3">
+                        {otherDifferences.map((item) => (
+                          <DifferenceCard key={item.id} item={item} />
+                        ))}
+                      </div>
+                    </section>
+                  )}
                 </div>
               )}
-
-              <Section
-                title="Possíveis duplicidades"
-                count={report.duplicates.length}
-              >
-                <div className="space-y-3">
-                  {report.duplicates.map((duplicate) => (
-                    <div
-                      key={`${duplicate.value}-${duplicate.nubankCount}-${duplicate.systemCount}`}
-                      className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4"
-                    >
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <div className="font-semibold text-zinc-100">
-                          Valor {formatMoney(duplicate.value)}
-                        </div>
-                        <div className="text-sm text-zinc-400">
-                          Nubank: {duplicate.nubankCount} | Sistema:{" "}
-                          {duplicate.systemCount} | Potencial:{" "}
-                          {formatMoney(duplicate.potentialDuplicateValue)}
-                        </div>
-                      </div>
-                      <div className="grid gap-2 md:grid-cols-2">
-                        <div className="text-xs text-zinc-400">
-                          Nubank:{" "}
-                          {duplicate.nubankEntries
-                            .map((entry) => entry.title)
-                            .join(", ") || "-"}
-                        </div>
-                        <div className="text-xs text-zinc-400">
-                          Sistema:{" "}
-                          {duplicate.systemEntries
-                            .map(
-                              (entry) =>
-                                `${entry.category || "Lancamento"}${
-                                  entry.note ? ` - ${entry.note}` : ""
-                                }`
-                            )
-                            .join(", ") || "-"}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-
-              <Section
-                title="Lançamentos não encontrados no sistema"
-                count={report.missingInSystem.length}
-              >
-                <div className="grid gap-2 md:grid-cols-2">
-                  {report.missingInSystem.map((entry) => (
-                    <EntryLine
-                      key={entry.id}
-                      label={kindLabel[entry.kind]}
-                      date={entry.date}
-                      description={entry.title}
-                      value={entry.amount}
-                    />
-                  ))}
-                </div>
-              </Section>
-
-              <Section
-                title="Lançamentos existentes somente no sistema"
-                count={report.missingInNubank.length}
-              >
-                <div className="grid gap-2 md:grid-cols-2">
-                  {report.missingInNubank.map((entry) => (
-                    <EntryLine
-                      key={entry.id}
-                      label="Sistema"
-                      date={entry.date}
-                      description={`${entry.category || "Lancamento"}${
-                        entry.note ? ` - ${entry.note}` : ""
-                      }`}
-                      value={entry.value}
-                    />
-                  ))}
-                </div>
-              </Section>
-
-              <Section
-                title="Diferenças de valor"
-                count={report.valueDifferences.length}
-              >
-                <div className="space-y-3">
-                  {report.valueDifferences.map((match) => (
-                    <MatchCard key={`${match.nubank.id}-${match.system.id}`} match={match} />
-                  ))}
-                </div>
-              </Section>
-
-              <Section
-                title="Correspondências para revisão"
-                count={report.reviewMatches.length}
-              >
-                <div className="space-y-3">
-                  {report.reviewMatches.map((match) => (
-                    <MatchCard key={`${match.nubank.id}-${match.system.id}`} match={match} />
-                  ))}
-                </div>
-              </Section>
-
-              <Section
-                title="Diferenças de data"
-                count={report.dateDifferences.length}
-              >
-                <div className="space-y-3">
-                  {report.dateDifferences.map((match) => (
-                    <MatchCard key={`${match.nubank.id}-${match.system.id}`} match={match} />
-                  ))}
-                </div>
-              </Section>
-
-              {showCleanMatches && (
-                <Section title="Correspondências" count={report.matches.length}>
-                  <div className="space-y-3">
-                    {report.matches.map((match) => (
-                      <MatchCard
-                        key={`${match.nubank.id}-${match.system.id}`}
-                        match={match}
-                      />
-                    ))}
-                  </div>
-                </Section>
-              )}
-
-              <Section
-                title="Movimentações excluídas da conciliação"
-                count={report.excludedNubankEntries.length}
-              >
-                <div className="grid gap-2 md:grid-cols-2">
-                  {report.excludedNubankEntries.map((entry) => (
-                    <EntryLine
-                      key={entry.id}
-                      label={kindLabel[entry.kind]}
-                      date={entry.date}
-                      description={entry.title}
-                      value={entry.amount}
-                    />
-                  ))}
-                </div>
-              </Section>
             </div>
           )}
         </div>

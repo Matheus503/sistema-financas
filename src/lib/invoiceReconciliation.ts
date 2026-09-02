@@ -111,7 +111,7 @@ const tokenSet = (value: string) =>
   new Set(
     normalizeComparableText(value)
       .split(" ")
-      .filter((token) => token.length >= 2)
+      .filter((token) => token.length >= 2),
   );
 
 const textSimilarity = (left: string, right: string) => {
@@ -143,7 +143,7 @@ const getDateDifferenceDays = (left: string, right: string) => {
   if (!leftDate || !rightDate) return null;
 
   return Math.round(
-    Math.abs(leftDate.getTime() - rightDate.getTime()) / 86_400_000
+    Math.abs(leftDate.getTime() - rightDate.getTime()) / 86_400_000,
   );
 };
 
@@ -158,12 +158,14 @@ const getConfidence = (score: number): MatchConfidence => {
 
 const scorePair = (
   nubank: NubankEntry,
-  system: SystemInvoiceEntry
+  system: SystemInvoiceEntry,
 ): MatchCandidate => {
   const reasons: ScoreReason[] = [];
   let score = 0;
 
-  const valueDifferenceCents = Math.abs(cents(nubank.amount) - cents(system.value));
+  const valueDifferenceCents = Math.abs(
+    cents(nubank.amount) - cents(system.value),
+  );
   const valueDifference = fromCents(valueDifferenceCents);
 
   if (valueDifferenceCents === 0) {
@@ -185,7 +187,7 @@ const scorePair = (
   const similarity = Math.max(
     textSimilarity(nubank.title, systemText(system)),
     textSimilarity(nubank.title, system.category || ""),
-    textSimilarity(nubank.title, system.note || "")
+    textSimilarity(nubank.title, system.note || ""),
   );
 
   if (similarity >= 0.45) {
@@ -226,10 +228,10 @@ const scorePair = (
   }
 
   const nubankHasInstallment = Boolean(
-    nubank.installmentCurrent && nubank.installmentTotal
+    nubank.installmentCurrent && nubank.installmentTotal,
   );
   const systemHasInstallment = Boolean(
-    system.installmentCurrent && system.installmentTotal
+    system.installmentCurrent && system.installmentTotal,
   );
   const hasInstallmentDifference =
     nubankHasInstallment &&
@@ -243,7 +245,10 @@ const scorePair = (
       reasons.push({ tone: "positive", text: "Parcela compativel" });
     } else {
       score -= 10;
-      reasons.push({ tone: "negative", text: "Parcela possivelmente incorreta" });
+      reasons.push({
+        tone: "negative",
+        text: "Parcela possivelmente incorreta",
+      });
     }
   }
 
@@ -274,11 +279,11 @@ const sortCandidate = (a: MatchCandidate, b: MatchCandidate) => {
 
 const findOneToOneMatches = (
   nubankEntries: NubankEntry[],
-  systemEntries: SystemInvoiceEntry[]
+  systemEntries: SystemInvoiceEntry[],
 ) => {
   const candidates = nubankEntries
     .flatMap((nubank) =>
-      systemEntries.map((system) => scorePair(nubank, system))
+      systemEntries.map((system) => scorePair(nubank, system)),
     )
     .filter((candidate) => candidate.score >= 60)
     .sort(sortCandidate);
@@ -304,7 +309,7 @@ const findOneToOneMatches = (
 
 const detectDuplicates = (
   missingInSystem: NubankEntry[],
-  missingInNubank: SystemInvoiceEntry[]
+  missingInNubank: SystemInvoiceEntry[],
 ) => {
   const byValue = new Map<
     number,
@@ -328,12 +333,12 @@ const detectDuplicates = (
   return Array.from(byValue.entries())
     .filter(
       ([, group]) =>
-        group.nubankEntries.length !== group.systemEntries.length &&
-        (group.nubankEntries.length > 1 || group.systemEntries.length > 1)
+        group.nubankEntries.length > 0 &&
+        group.systemEntries.length > group.nubankEntries.length,
     )
     .map(([valueCents, group]) => {
       const extraCount = Math.abs(
-        group.nubankEntries.length - group.systemEntries.length
+        group.nubankEntries.length - group.systemEntries.length,
       );
 
       return {
@@ -358,59 +363,62 @@ const getStatus = (difference: number, residual: number) => {
 
 export const reconcileInvoice = (
   nubankEntries: NubankEntry[],
-  systemEntries: SystemInvoiceEntry[]
+  systemEntries: SystemInvoiceEntry[],
 ): ReconciliationReport => {
   const conciliableNubankEntries = nubankEntries.filter(
-    (entry) => entry.conciliable
+    (entry) => entry.conciliable,
   );
   const excludedNubankEntries = nubankEntries.filter(
-    (entry) => !entry.conciliable
+    (entry) => !entry.conciliable,
   );
   const { matches, usedNubank, usedSystem } = findOneToOneMatches(
     conciliableNubankEntries,
-    systemEntries
+    systemEntries,
   );
 
   const missingInSystem = conciliableNubankEntries.filter(
-    (entry) => !usedNubank.has(entry.id)
+    (entry) => !usedNubank.has(entry.id),
   );
   const missingInNubank = systemEntries.filter(
-    (entry) => !usedSystem.has(entry.id)
+    (entry) => !usedSystem.has(entry.id),
   );
   const reviewMatches = matches.filter((match) => match.confidence !== "high");
   const dateDifferences = matches.filter((match) => match.hasDateDifference);
   const valueDifferences = matches.filter((match) => match.hasValueDifference);
   const duplicates = detectDuplicates(missingInSystem, missingInNubank);
 
-  const nubankGross = nubankEntries.reduce((sum, entry) => sum + entry.amount, 0);
+  const nubankGross = nubankEntries.reduce(
+    (sum, entry) => sum + entry.amount,
+    0,
+  );
   const nubankConciliable = conciliableNubankEntries.reduce(
     (sum, entry) => sum + entry.amount,
-    0
+    0,
   );
   const nubankExcluded = excludedNubankEntries.reduce(
     (sum, entry) => sum + entry.amount,
-    0
+    0,
   );
   const system = systemEntries.reduce((sum, entry) => sum + entry.value, 0);
   const difference = system - nubankConciliable;
   const missingInSystemImpact = missingInSystem.reduce(
     (sum, entry) => sum - entry.amount,
-    0
+    0,
   );
   const missingInNubankImpact = missingInNubank.reduce(
     (sum, entry) => sum + entry.value,
-    0
+    0,
   );
   const valueDifferenceImpact = valueDifferences.reduce(
     (sum, match) => sum + (match.system.value - match.nubank.amount),
-    0
+    0,
   );
   const explained = Number(
     (
       missingInSystemImpact +
       missingInNubankImpact +
       valueDifferenceImpact
-    ).toFixed(2)
+    ).toFixed(2),
   );
   const residual = Number((difference - explained).toFixed(2));
 
