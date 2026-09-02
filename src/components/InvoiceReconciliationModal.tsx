@@ -1,9 +1,9 @@
 "use client";
 
-import { FileUp } from "lucide-react";
-import { useState } from "react";
+import { FilePlus2, FileUp, Trash2 } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { parseNubankCsv } from "../lib/nubankCsvParser";
+import { parseNubankCsv, type NubankEntry } from "../lib/nubankCsvParser";
 import {
   reconcileInvoice,
   type ReconciliationReport,
@@ -15,6 +15,9 @@ type Props = {
   monthLabel: string;
   systemItems: SystemInvoiceEntry[];
   onClose: () => void;
+  onCreateMissingEntry?: (entry: NubankEntry) => void;
+  onEditSystemEntry?: (entry: SystemInvoiceEntry) => void;
+  onDeleteSystemEntry?: (entry: SystemInvoiceEntry) => void;
 };
 
 type DifferenceItem = {
@@ -24,7 +27,7 @@ type DifferenceItem = {
   amount: number;
   description: string;
   detail?: string;
-  tone: "red" | "yellow" | "orange";
+  tone: "red" | "yellow" | "orange" | "purple";
 };
 
 const formatMoney = (value: number) =>
@@ -46,8 +49,17 @@ const systemDescription = (entry: SystemInvoiceEntry) =>
 const toneClassName = (tone: DifferenceItem["tone"]) => {
   if (tone === "red") return "border-red-500/25 bg-red-500/10";
   if (tone === "orange") return "border-orange-500/25 bg-orange-500/10";
+  if (tone === "purple") return "border-purple-500/25 bg-purple-500/10";
 
   return "border-yellow-500/25 bg-yellow-500/10";
+};
+
+const amountClassName = (tone: DifferenceItem["tone"]) => {
+  if (tone === "orange") return "text-orange-300";
+  if (tone === "yellow") return "text-yellow-300";
+  if (tone === "purple") return "text-purple-300";
+
+  return "text-red-300";
 };
 
 const buildOtherDifferenceItems = (report: ReconciliationReport) => {
@@ -118,7 +130,15 @@ const buildOtherDifferenceItems = (report: ReconciliationReport) => {
   });
 };
 
-const DifferenceCard = ({ item }: { item: DifferenceItem }) => (
+const DifferenceCard = ({
+  item,
+  action,
+  onAmountClick,
+}: {
+  item: DifferenceItem;
+  action?: ReactNode;
+  onAmountClick?: () => void;
+}) => (
   <div className={`rounded-xl border p-4 ${toneClassName(item.tone)}`}>
     <div className="flex items-start justify-between gap-4">
       <div>
@@ -128,8 +148,23 @@ const DifferenceCard = ({ item }: { item: DifferenceItem }) => (
           <div className="mt-1 text-xs text-zinc-400">{item.detail}</div>
         )}
       </div>
-      <div className="shrink-0 text-right font-bold text-red-300">
-        {formatMoney(item.amount)}
+      <div className="flex shrink-0 items-center self-center gap-3">
+        {onAmountClick ? (
+          <button
+            type="button"
+            onClick={onAmountClick}
+            className={`text-right font-bold transition hover:underline ${amountClassName(
+              item.tone,
+            )}`}
+          >
+            {formatMoney(item.amount)}
+          </button>
+        ) : (
+          <div className={`text-right font-bold ${amountClassName(item.tone)}`}>
+            {formatMoney(item.amount)}
+          </div>
+        )}
+        {action}
       </div>
     </div>
   </div>
@@ -146,10 +181,19 @@ export default function InvoiceReconciliationModal({
   monthLabel,
   systemItems,
   onClose,
+  onCreateMissingEntry,
+  onEditSystemEntry,
+  onDeleteSystemEntry,
 }: Props) {
-  const [report, setReport] = useState<ReconciliationReport | null>(null);
+  const [nubankEntries, setNubankEntries] = useState<NubankEntry[]>([]);
   const [fileName, setFileName] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+
+  const report = useMemo<ReconciliationReport | null>(() => {
+    if (!nubankEntries.length) return null;
+
+    return reconcileInvoice(nubankEntries, systemItems);
+  }, [nubankEntries, systemItems]);
 
   if (!open) return null;
 
@@ -164,7 +208,7 @@ export default function InvoiceReconciliationModal({
     try {
       const text = await file.text();
       const parsed = parseNubankCsv(text);
-      setReport(reconcileInvoice(parsed.entries, systemItems));
+      setNubankEntries(parsed.entries);
       setFileName(file.name);
       toast.success("CSV processado com sucesso.");
     } catch (error) {
@@ -183,10 +227,6 @@ export default function InvoiceReconciliationModal({
       report.missingInNubank.length +
       otherDifferences.length
     : 0;
-  const differenceHasValue = report
-    ? Math.abs(report.totals.difference) > 0.01
-    : false;
-
   return (
     <div className="fixed inset-0 z-[70] bg-black/75 px-4 py-6">
       <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-white shadow-2xl">
@@ -265,11 +305,7 @@ export default function InvoiceReconciliationModal({
                 </div>
                 <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
                   <div className="text-xs text-zinc-500">Diferença</div>
-                  <div
-                    className={`mt-1 text-xl font-bold ${
-                      differenceHasValue ? "text-yellow-300" : "text-green-300"
-                    }`}
-                  >
+                  <div className="mt-1 text-xl font-bold text-purple-300">
                     {formatMoney(report.totals.difference)}
                   </div>
                 </div>
@@ -308,6 +344,19 @@ export default function InvoiceReconciliationModal({
                                 description: `${formatDate(entry.date)} - ${entry.title}`,
                                 tone: "red",
                               }}
+                              action={
+                                onCreateMissingEntry && entry.amount > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => onCreateMissingEntry(entry)}
+                                    className="grid h-9 w-9 place-items-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-purple-200"
+                                    aria-label="Lançar no sistema"
+                                    title="Lançar no sistema"
+                                  >
+                                    <FilePlus2 size={19} />
+                                  </button>
+                                ) : null
+                              }
                             />
                           ))}
                         </div>
@@ -337,8 +386,26 @@ export default function InvoiceReconciliationModal({
                                 title: "Não existe no Nubank",
                                 amount: entry.value,
                                 description: `${formatDate(entry.date)} - ${systemDescription(entry)}`,
-                                tone: "red",
+                                tone: "orange",
                               }}
+                              action={
+                                onDeleteSystemEntry ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => onDeleteSystemEntry(entry)}
+                                    className="grid h-9 w-9 place-items-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-red-300"
+                                    aria-label="Excluir lançamento"
+                                    title="Excluir lançamento"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                ) : null
+                              }
+                              onAmountClick={
+                                onEditSystemEntry
+                                  ? () => onEditSystemEntry(entry)
+                                  : undefined
+                              }
                             />
                           ))}
                         </div>

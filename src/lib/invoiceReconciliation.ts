@@ -3,6 +3,7 @@ import type { NubankEntry } from "./nubankCsvParser";
 export type SystemInvoiceEntry = {
   id: string;
   transactionId: string;
+  monthId?: string;
   date: string;
   value: number;
   category?: string;

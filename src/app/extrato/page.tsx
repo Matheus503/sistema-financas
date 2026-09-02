@@ -26,9 +26,12 @@ import {
   cancelInstallmentPurchaseFromInstallment,
 } from "../../services/installmentPurchaseService";
 import TransactionList from "../../components/TransactionList";
+import InvoiceReconciliationModal from "../../components/InvoiceReconciliationModal";
 import LaunchModal from "../../components/LaunchModal";
 import SwitchControl from "../../components/SwitchControl";
 import { useModalKeyboardActions } from "../../hooks/useModalKeyboardActions";
+import type { NubankEntry } from "../../lib/nubankCsvParser";
+import type { SystemInvoiceEntry } from "../../lib/invoiceReconciliation";
 import type { FinanceAccount } from "../../services/accountService";
 
 type MonthDoc = {
@@ -81,20 +84,13 @@ type TransactionGroup = {
   items: ExtratoItem[];
 };
 
-const monthNames = [
-  "Janeiro",
-  "Fevereiro",
-  "Março",
-  "Abril",
-  "Maio",
-  "Junho",
-  "Julho",
-  "Agosto",
-  "Setembro",
-  "Outubro",
-  "Novembro",
-  "Dezembro",
-];
+type LaunchInitialValues = {
+  accountId?: string;
+  value?: number;
+  date?: string;
+  category?: string;
+  note?: string;
+};
 
 const ALL_LAUNCHERS = "all";
 const ALL_CREDIT_CARDS = "all";
@@ -120,10 +116,13 @@ function ExtratoContent() {
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [, setTransactions] = useState<Transaction[]>([]);
   const [activeMonthId, setActiveMonthId] = useState<string | null>(null);
-  const [groups, setGroups] = useState<TransactionGroup[]>([]);
-  const [total, setTotal] = useState(0);
   const [monthTitle, setMonthTitle] = useState("Extrato de cartão");
   const [showLaunchModal, setShowLaunchModal] = useState(false);
+  const [launchInitialValues, setLaunchInitialValues] =
+    useState<LaunchInitialValues | null>(null);
+  const [reconciliationMonthLabel, setReconciliationMonthLabel] = useState<
+    string | null
+  >(null);
 
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
@@ -133,7 +132,9 @@ function ExtratoContent() {
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [filterCategory, setFilterCategory] = useState("");
   const [filterLauncher, setFilterLauncher] = useState(ALL_LAUNCHERS);
-  const [filterCreditCard, setFilterCreditCard] = useState(ALL_CREDIT_CARDS);
+  const [filterCreditCard, setFilterCreditCard] = useState(
+    () => requestedCreditCardId || ALL_CREDIT_CARDS,
+  );
 
   const [showEdit, setShowEdit] = useState(false);
   const [editItem, setEditItem] = useState<ExtratoItem | null>(null);
@@ -144,12 +145,7 @@ function ExtratoContent() {
   const [saving, setSaving] = useState(false);
 
   const [showDelete, setShowDelete] = useState(false);
-  const [itemToDelete, setItemToDelete] =
-    useState<ExtratoItem | null>(null);
-
-  useEffect(() => {
-    setFilterCreditCard(requestedCreditCardId || ALL_CREDIT_CARDS);
-  }, [requestedCreditCardId]);
+  const [itemToDelete, setItemToDelete] = useState<ExtratoItem | null>(null);
 
   const formatMoney = (v: number) =>
     v.toLocaleString("pt-BR", {
@@ -212,7 +208,9 @@ function ExtratoContent() {
   const getSelectedCreditCardLabel = () => {
     if (filterCreditCard === ALL_CREDIT_CARDS) return "Todos os cartões";
 
-    const card = creditCardAccounts.find((item) => item.id === filterCreditCard);
+    const card = creditCardAccounts.find(
+      (item) => item.id === filterCreditCard,
+    );
     return card?.name || "Cartão";
   };
 
@@ -225,30 +223,34 @@ function ExtratoContent() {
     setAnticipationPaidValue("");
   };
 
-  const itemMatchesMember = (
-    item: ExtratoItem,
-    member: GroupMemberListItem
-  ) => {
-    const launcherId = item.launcherId || item.userId || "";
+  const itemMatchesMember = useCallback(
+    (item: ExtratoItem, member: GroupMemberListItem) => {
+      const launcherId = item.launcherId || item.userId || "";
 
-    if (member.status === "active" && launcherId && launcherId === member.id) {
-      return true;
-    }
+      if (
+        member.status === "active" &&
+        launcherId &&
+        launcherId === member.id
+      ) {
+        return true;
+      }
 
-    const rawLauncher = normalizeText(
-      `${item.launcherName || ""} ${item.userName || ""}`
-    );
-    const memberName = normalizeText(member.name);
-    const memberEmail = normalizeText(member.email);
-    const memberEmailPrefix = normalizeText(member.email.split("@")[0] || "");
+      const rawLauncher = normalizeText(
+        `${item.launcherName || ""} ${item.userName || ""}`,
+      );
+      const memberName = normalizeText(member.name);
+      const memberEmail = normalizeText(member.email);
+      const memberEmailPrefix = normalizeText(member.email.split("@")[0] || "");
 
-    return Boolean(
-      rawLauncher &&
+      return Boolean(
+        rawLauncher &&
         ((memberName && rawLauncher.includes(memberName)) ||
           (memberEmail && rawLauncher.includes(memberEmail)) ||
-          (memberEmailPrefix && rawLauncher.includes(memberEmailPrefix)))
-    );
-  };
+          (memberEmailPrefix && rawLauncher.includes(memberEmailPrefix))),
+      );
+    },
+    [],
+  );
 
   const normalizeDateKey = (value: string) => {
     if (!value) return "";
@@ -306,7 +308,7 @@ function ExtratoContent() {
 
     if (filterStartDate && filterEndDate) {
       return `${formatDateLabel(filterStartDate)} - ${formatDateLabel(
-        filterEndDate
+        filterEndDate,
       )}`;
     }
 
@@ -329,7 +331,7 @@ function ExtratoContent() {
     const firstDayOfMonth = new Date(
       monthDate.getFullYear(),
       monthDate.getMonth(),
-      1
+      1,
     );
     const startDate = new Date(firstDayOfMonth);
     startDate.setDate(firstDayOfMonth.getDate() - firstDayOfMonth.getDay());
@@ -443,10 +445,10 @@ function ExtratoContent() {
                   isSelected
                     ? "bg-purple-600 text-white font-bold"
                     : isInRange
-                    ? "bg-purple-600/20 text-purple-100"
-                    : item.isCurrentMonth
-                    ? "text-zinc-100 hover:bg-zinc-800"
-                    : "text-zinc-600 hover:bg-zinc-800/60"
+                      ? "bg-purple-600/20 text-purple-100"
+                      : item.isCurrentMonth
+                        ? "text-zinc-100 hover:bg-zinc-800"
+                        : "text-zinc-600 hover:bg-zinc-800/60"
                 }`}
               >
                 {item.day}
@@ -486,8 +488,6 @@ function ExtratoContent() {
         setAccounts([]);
         setTransactions([]);
         setActiveMonthId(null);
-        setGroups([]);
-        setTotal(0);
         setMonthTitle("Extrato de cartão");
         return;
       }
@@ -495,18 +495,18 @@ function ExtratoContent() {
       const [accounts, transactions] = (await Promise.all([
         getAccountsByMonth(targetMonth.id),
         getTransactions(targetMonth.id),
-      ])) as [any[], Transaction[]];
+      ])) as [FinanceAccount[], Transaction[]];
 
       const creditCardAccounts = accounts.filter((a: FinanceAccount) =>
-        isCreditCardAccount(a)
+        isCreditCardAccount(a),
       );
 
       const creditCardById = new Map(
-        creditCardAccounts.map((a: FinanceAccount) => [String(a.id), a])
+        creditCardAccounts.map((a: FinanceAccount) => [String(a.id), a]),
       );
 
       const creditCardIds = new Set(
-        creditCardAccounts.map((a: FinanceAccount) => String(a.id))
+        creditCardAccounts.map((a: FinanceAccount) => String(a.id)),
       );
 
       const label = formatMonthLabel(targetMonth.month, targetMonth.year);
@@ -619,24 +619,91 @@ function ExtratoContent() {
     filterCategory,
     filterLauncher,
     groupMembers,
+    itemMatchesMember,
   ]);
 
-  useEffect(() => {
-    const grouped: TransactionGroup[] = [
+  const groups = useMemo<TransactionGroup[]>(() => {
+    return [
       {
         monthLabel: monthTitle,
         items: filteredItems,
       },
     ];
-
-    setGroups(grouped);
-    setTotal(filteredItems.reduce((sum, item) => sum + item.value, 0));
   }, [filteredItems, monthTitle]);
 
+  const total = useMemo(
+    () => filteredItems.reduce((sum, item) => sum + item.value, 0),
+    [filteredItems],
+  );
+
+  const reconciliationCreditCardId = useMemo(() => {
+    if (filterCreditCard !== ALL_CREDIT_CARDS) return filterCreditCard;
+
+    const primaryCard = creditCardAccounts.find(
+      (account) => account.isPrimaryCreditCard === true,
+    );
+    const nubankCard = creditCardAccounts.find((account) =>
+      normalizeText(account.name).includes("nubank"),
+    );
+
+    return String(
+      primaryCard?.id || nubankCard?.id || creditCardAccounts[0]?.id || "",
+    );
+  }, [creditCardAccounts, filterCreditCard]);
+
+  const reconciliationGroups = useMemo(() => {
+    const items = reconciliationCreditCardId
+      ? allItems.filter((item) => item.accountId === reconciliationCreditCardId)
+      : [];
+
+    return [
+      {
+        monthLabel: monthTitle,
+        items,
+      },
+    ];
+  }, [allItems, monthTitle, reconciliationCreditCardId]);
+
+  const activeReconciliationGroup = reconciliationMonthLabel
+    ? reconciliationGroups.find(
+        (group) => group.monthLabel === reconciliationMonthLabel,
+      ) || null
+    : null;
+
   const categories = useMemo(() => {
-    const unique = [...new Set(allItems.map((i) => i.category).filter(Boolean))];
+    const unique = [
+      ...new Set(allItems.map((i) => i.category).filter(Boolean)),
+    ];
     return unique as string[];
   }, [allItems]);
+
+  const openLaunchFromNubankEntry = (entry: NubankEntry) => {
+    if (!reconciliationCreditCardId) {
+      toast.error("Selecione o cartão Nubank para lançar esta despesa.");
+      return;
+    }
+
+    setLaunchInitialValues({
+      accountId: reconciliationCreditCardId,
+      value: Math.abs(entry.amount),
+      date: entry.date,
+      category: "",
+      note: "",
+    });
+    setShowLaunchModal(true);
+  };
+
+  const findSystemReconciliationItem = (entry: SystemInvoiceEntry) => {
+    return (
+      allItems.find(
+        (candidate) =>
+          candidate.monthId === entry.monthId &&
+          candidate.transactionId === entry.transactionId,
+      ) ||
+      allItems.find((candidate) => candidate.id === entry.id) ||
+      null
+    );
+  };
 
   const openEdit = (item: ExtratoItem) => {
     setEditItem(item);
@@ -645,6 +712,28 @@ function ExtratoContent() {
     setAnticipationInstallments("");
     setAnticipationPaidValue("");
     setShowEdit(true);
+  };
+
+  const openEditFromReconciliation = (entry: SystemInvoiceEntry) => {
+    const item = findSystemReconciliationItem(entry);
+
+    if (!item) {
+      toast.error("Não encontrei este lançamento para editar.");
+      return;
+    }
+
+    openEdit(item);
+  };
+
+  const askDeleteFromReconciliation = (entry: SystemInvoiceEntry) => {
+    const item = findSystemReconciliationItem(entry);
+
+    if (!item) {
+      toast.error("Não encontrei este lançamento para excluir.");
+      return;
+    }
+
+    askDelete(item);
   };
 
   const editRemainingInstallments =
@@ -661,7 +750,7 @@ function ExtratoContent() {
   const anticipationPaidAmount = parseCurrency(anticipationPaidValue);
   const anticipationDiscountAmount = Math.max(
     anticipationOriginalAmount - anticipationPaidAmount,
-    0
+    0,
   );
   const canAnticipateEditItem =
     Boolean(editItem?.installmentGroupId) && editRemainingInstallments > 0;
@@ -683,7 +772,9 @@ function ExtratoContent() {
         parsedAnticipationInstallments < 1 ||
         parsedAnticipationInstallments > editRemainingInstallments
       ) {
-        toast.error("Informe uma quantidade valida de parcelas para antecipar.");
+        toast.error(
+          "Informe uma quantidade valida de parcelas para antecipar.",
+        );
         return;
       }
 
@@ -722,7 +813,9 @@ function ExtratoContent() {
           discountAmount: anticipationDiscountAmount,
           accountId: String(editItem.accountId),
           category: editItem.category || "Sem categoria",
-          baseNote: stripInstallmentSuffix(editItem.note || editItem.category || ""),
+          baseNote: stripInstallmentSuffix(
+            editItem.note || editItem.category || "",
+          ),
           date: editItem.date,
           userId,
           userName,
@@ -736,14 +829,14 @@ function ExtratoContent() {
       toast.success(
         anticipateInstallments
           ? "Antecipação registrada com sucesso."
-          : "Lancamento editado com sucesso."
+          : "Lancamento editado com sucesso.",
       );
     } catch (error) {
       console.error("Erro ao editar lançamento:", error);
       toast.error(
         error instanceof Error
           ? error.message
-          : "Nao foi possivel editar o lancamento."
+          : "Nao foi possivel editar o lancamento.",
       );
     } finally {
       setSaving(false);
@@ -805,33 +898,36 @@ function ExtratoContent() {
           </p>
         </div>
 
-<div className="flex gap-2">
-  <button
-    onClick={() => setShowLaunchModal(true)}
-    className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-xl shadow"
-    type="button"
-  >
-    + Lançar
-  </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setLaunchInitialValues(null);
+              setShowLaunchModal(true);
+            }}
+            className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-xl shadow"
+            type="button"
+          >
+            + Lançar
+          </button>
 
-  <button
-    onClick={() =>
-      router.push(`/extrato-total?monthId=${requestedMonthId}`)
-    }
-    className="bg-purple-700 hover:bg-purple-600 px-4 py-2 rounded-xl"
-    type="button"
-  >
-    Extrato completo
-  </button>
+          <button
+            onClick={() =>
+              router.push(`/extrato-total?monthId=${requestedMonthId}`)
+            }
+            className="bg-purple-700 hover:bg-purple-600 px-4 py-2 rounded-xl"
+            type="button"
+          >
+            Extrato completo
+          </button>
 
-  <button
-    onClick={() => router.push("/dashboard")}
-    className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl"
-    type="button"
-  >
-    Voltar
-  </button>
-</div>
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl"
+            type="button"
+          >
+            Voltar
+          </button>
+        </div>
       </div>
 
       <div className="bg-purple-800 p-6 rounded-2xl mb-6 flex justify-between items-center">
@@ -952,7 +1048,7 @@ function ExtratoContent() {
                     type="button"
                     onClick={() =>
                       setCalendarMonth((current) =>
-                        addCalendarMonths(current, -1)
+                        addCalendarMonths(current, -1),
                       )
                     }
                     className="rounded-lg bg-zinc-800 px-3 py-2 hover:bg-zinc-700"
@@ -971,7 +1067,7 @@ function ExtratoContent() {
                     type="button"
                     onClick={() =>
                       setCalendarMonth((current) =>
-                        addCalendarMonths(current, 1)
+                        addCalendarMonths(current, 1),
                       )
                     }
                     className="rounded-lg bg-zinc-800 px-3 py-2 hover:bg-zinc-700"
@@ -1020,7 +1116,9 @@ function ExtratoContent() {
           </div>
 
           <div>
-            <label className="block text-xs text-zinc-400 mb-2">Categoria</label>
+            <label className="block text-xs text-zinc-400 mb-2">
+              Categoria
+            </label>
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
@@ -1101,10 +1199,15 @@ function ExtratoContent() {
       ) : groups[0]?.items?.length ? (
         <TransactionList
           groups={groups}
+          reconciliationGroups={reconciliationGroups}
           showValues={showValues}
           formatMoney={formatMoney}
           onEdit={openEdit}
           onDelete={askDelete}
+          onOpenReconciliation={setReconciliationMonthLabel}
+          onCreateMissingEntry={openLaunchFromNubankEntry}
+          onEditSystemEntry={openEditFromReconciliation}
+          onDeleteSystemEntry={askDeleteFromReconciliation}
         />
       ) : (
         <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-6 text-zinc-400">
@@ -1113,7 +1216,7 @@ function ExtratoContent() {
       )}
 
       {showEdit && editItem && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70">
           <form
             className="bg-zinc-900 p-6 rounded-xl w-full max-w-md border border-zinc-800"
             onSubmit={(event) => {
@@ -1146,7 +1249,7 @@ function ExtratoContent() {
                       setAnticipationInstallments(
                         editRemainingInstallments
                           ? String(editRemainingInstallments)
-                          : ""
+                          : "",
                       );
                       setAnticipationPaidValue("");
                     } else {
@@ -1168,7 +1271,7 @@ function ExtratoContent() {
                           onChange={(event) => {
                             const nextValue = event.target.value.replace(
                               /\D/g,
-                              ""
+                              "",
                             );
 
                             if (!nextValue) {
@@ -1180,9 +1283,9 @@ function ExtratoContent() {
                               String(
                                 Math.min(
                                   Number(nextValue),
-                                  editRemainingInstallments
-                                )
-                              )
+                                  editRemainingInstallments,
+                                ),
+                              ),
                             );
                           }}
                           className="mt-1 w-full bg-transparent p-0 text-sm font-semibold text-purple-300 outline-none"
@@ -1193,7 +1296,8 @@ function ExtratoContent() {
                       <div className="rounded-lg bg-zinc-800/70 p-3">
                         <div>Atual</div>
                         <div className="mt-1 text-sm font-semibold text-zinc-100">
-                          {editItem.installmentCurrent}/{editItem.installmentTotal}
+                          {editItem.installmentCurrent}/
+                          {editItem.installmentTotal}
                         </div>
                       </div>
 
@@ -1214,7 +1318,7 @@ function ExtratoContent() {
                           value={anticipationPaidValue}
                           onChange={(event) =>
                             setAnticipationPaidValue(
-                              formatCurrencyTyping(event.target.value)
+                              formatCurrencyTyping(event.target.value),
                             )
                           }
                           className="mt-1 w-full bg-transparent p-0 text-sm font-semibold text-zinc-100 outline-none"
@@ -1265,7 +1369,7 @@ function ExtratoContent() {
       )}
 
       {showDelete && itemToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70">
           <div className="bg-zinc-900 p-6 rounded-xl w-80 text-center border border-zinc-800">
             <h2 className="mb-4 text-lg font-bold">
               {itemToDelete.installmentGroupId
@@ -1306,19 +1410,47 @@ function ExtratoContent() {
         </div>
       )}
 
+      {activeReconciliationGroup && (
+        <InvoiceReconciliationModal
+          open={Boolean(activeReconciliationGroup)}
+          monthLabel={activeReconciliationGroup.monthLabel}
+          systemItems={activeReconciliationGroup.items.map((item) => ({
+            id: item.id,
+            transactionId: item.transactionId,
+            monthId: item.monthId,
+            date: item.date,
+            value: item.value,
+            category: item.category,
+            note: item.note,
+            accountName: item.accountName,
+            installmentCurrent: item.installmentCurrent,
+            installmentTotal: item.installmentTotal,
+            transactionType: item.transactionType,
+          }))}
+          onClose={() => setReconciliationMonthLabel(null)}
+          onCreateMissingEntry={openLaunchFromNubankEntry}
+          onEditSystemEntry={openEditFromReconciliation}
+          onDeleteSystemEntry={askDeleteFromReconciliation}
+        />
+      )}
+
       <LaunchModal
         open={showLaunchModal}
-        onClose={() => setShowLaunchModal(false)}
+        onClose={() => {
+          setShowLaunchModal(false);
+          setLaunchInitialValues(null);
+        }}
         monthId={activeMonthId}
         accounts={accounts}
         setAccounts={setAccounts}
         setTransactions={setTransactions}
+        initialValues={launchInitialValues}
         onSaved={async () => {
           await loadExtrato();
         }}
         onMonthsChanged={async (targetMonthId) => {
           await loadExtrato();
-          if (targetMonthId !== activeMonthId) {
+          if (targetMonthId !== activeMonthId && !launchInitialValues) {
             router.push(`/extrato?monthId=${targetMonthId}`);
           }
         }}

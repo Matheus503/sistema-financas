@@ -2,6 +2,8 @@
 
 import { FileCheck2, List, Rows3, Trash2 } from "lucide-react";
 import { useState } from "react";
+import type { NubankEntry } from "../lib/nubankCsvParser";
+import type { SystemInvoiceEntry } from "../lib/invoiceReconciliation";
 import InvoiceReconciliationModal from "./InvoiceReconciliationModal";
 
 type TransactionItem = {
@@ -31,24 +33,40 @@ type TransactionGroup = {
 
 type Props = {
   groups: TransactionGroup[];
+  reconciliationGroups?: TransactionGroup[];
   showValues: boolean;
   formatMoney: (value: number) => string;
   onEdit: (item: TransactionItem) => void;
   onDelete: (item: TransactionItem) => void;
+  onOpenReconciliation?: (monthLabel: string) => void;
+  onCreateMissingEntry?: (entry: NubankEntry) => void;
+  onEditSystemEntry?: (entry: SystemInvoiceEntry) => void;
+  onDeleteSystemEntry?: (entry: SystemInvoiceEntry) => void;
 };
 
 export default function TransactionList({
   groups,
+  reconciliationGroups,
   showValues,
   formatMoney,
   onEdit,
   onDelete,
+  onOpenReconciliation,
+  onCreateMissingEntry,
+  onEditSystemEntry,
+  onDeleteSystemEntry,
 }: Props) {
+  const groupsForReconciliation = reconciliationGroups || groups;
   const [listViewGroups, setListViewGroups] = useState<Record<string, boolean>>(
-    {}
+    {},
   );
   const [reconciliationGroup, setReconciliationGroup] =
     useState<TransactionGroup | null>(null);
+  const activeReconciliationGroup = reconciliationGroup
+    ? groupsForReconciliation.find(
+        (item) => item.monthLabel === reconciliationGroup.monthLabel,
+      ) || reconciliationGroup
+    : null;
 
   const formatDate = (dateString: string) => {
     const dateKey = String(dateString || "").slice(0, 10);
@@ -82,16 +100,17 @@ export default function TransactionList({
         const categoryTotals = Object.entries(
           group.items.reduce<Record<string, number>>((totals, item) => {
             const category = getDisplayCategory(item);
-            totals[category] = (totals[category] || 0) + Number(item.value || 0);
+            totals[category] =
+              (totals[category] || 0) + Number(item.value || 0);
 
             return totals;
-          }, {})
+          }, {}),
         ).sort(([categoryA], [categoryB]) =>
-          categoryA.localeCompare(categoryB, "pt-BR")
+          categoryA.localeCompare(categoryB, "pt-BR"),
         );
         const groupTotal = categoryTotals.reduce(
           (sum, [, value]) => sum + value,
-          0
+          0,
         );
 
         return (
@@ -134,7 +153,19 @@ export default function TransactionList({
               </div>
 
               <button
-                onClick={() => setReconciliationGroup(group)}
+                onClick={() => {
+                  if (onOpenReconciliation) {
+                    onOpenReconciliation(group.monthLabel);
+                    return;
+                  }
+
+                  const fullGroup =
+                    groupsForReconciliation.find(
+                      (item) => item.monthLabel === group.monthLabel,
+                    ) || group;
+
+                  setReconciliationGroup(fullGroup);
+                }}
                 type="button"
                 className="ml-auto grid h-9 w-9 place-items-center rounded-lg border border-zinc-700 bg-zinc-800/70 text-zinc-300 transition hover:bg-zinc-700 hover:text-white"
                 aria-label="Conciliar fatura"
@@ -236,13 +267,14 @@ export default function TransactionList({
         );
       })}
 
-      {reconciliationGroup && (
+      {activeReconciliationGroup && (
         <InvoiceReconciliationModal
-          open={Boolean(reconciliationGroup)}
-          monthLabel={reconciliationGroup.monthLabel}
-          systemItems={reconciliationGroup.items.map((item) => ({
+          open={Boolean(activeReconciliationGroup)}
+          monthLabel={activeReconciliationGroup.monthLabel}
+          systemItems={activeReconciliationGroup.items.map((item) => ({
             id: item.id,
             transactionId: item.transactionId,
+            monthId: item.monthId,
             date: item.date,
             value: item.value,
             category: item.category,
@@ -253,6 +285,11 @@ export default function TransactionList({
             transactionType: item.transactionType,
           }))}
           onClose={() => setReconciliationGroup(null)}
+          onCreateMissingEntry={(entry) => {
+            onCreateMissingEntry?.(entry);
+          }}
+          onEditSystemEntry={onEditSystemEntry}
+          onDeleteSystemEntry={onDeleteSystemEntry}
         />
       )}
     </div>

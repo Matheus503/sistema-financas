@@ -21,10 +21,7 @@ import {
 
 import type { FinanceAccount } from "../services/accountService";
 
-import {
-  createMonth,
-  getAllMonths,
-} from "../services/monthService";
+import { createMonth, getAllMonths } from "../services/monthService";
 import { createInstallmentPurchase } from "../services/installmentPurchaseService";
 import { ensureUserProfile } from "../services/userService";
 import {
@@ -54,28 +51,23 @@ type Props = {
   onClose: () => void;
   monthId: string | null;
   accounts: FinanceAccount[];
-  setAccounts: React.Dispatch<
-    React.SetStateAction<FinanceAccount[]>
-  >;
-  setTransactions: React.Dispatch<
-    React.SetStateAction<TransactionRecord[]>
-  >;
-  onMonthsChanged?: (
-    targetMonthId: string
-  ) => Promise<void>;
-  onSaved?: (
-    targetMonthId: string
-  ) => Promise<void> | void;
+  setAccounts: React.Dispatch<React.SetStateAction<FinanceAccount[]>>;
+  setTransactions: React.Dispatch<React.SetStateAction<TransactionRecord[]>>;
+  onMonthsChanged?: (targetMonthId: string) => Promise<void>;
+  onSaved?: (targetMonthId: string) => Promise<void> | void;
+  initialValues?: {
+    accountId?: string;
+    value?: number;
+    date?: string;
+    category?: string;
+    note?: string;
+  } | null;
 };
 
 const resolveLauncherName = () => {
   return (
-    auth.currentUser?.displayName?.split(
-      " "
-    )[0] ||
-    auth.currentUser?.email?.split(
-      "@"
-    )[0] ||
+    auth.currentUser?.displayName?.split(" ")[0] ||
+    auth.currentUser?.email?.split("@")[0] ||
     ""
   );
 };
@@ -96,34 +88,21 @@ const getTodayDateKey = () => {
 
   const year = now.getFullYear();
 
-  const month = String(
-    now.getMonth() + 1
-  ).padStart(2, "0");
+  const month = String(now.getMonth() + 1).padStart(2, "0");
 
-  const day = String(
-    now.getDate()
-  ).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 };
 
 const getInvoiceMonth = (dateKey: string, closingDay: number) => {
-  const [year, month, day] =
-    dateKey
-      .split("-")
-      .map(Number);
+  const [year, month, day] = dateKey.split("-").map(Number);
 
   if (day >= closingDay) {
     return {
-      year:
-        month === 12
-          ? year + 1
-          : year,
+      year: month === 12 ? year + 1 : year,
 
-      month:
-        month === 12
-          ? 1
-          : month + 1,
+      month: month === 12 ? 1 : month + 1,
     };
   }
 
@@ -132,7 +111,7 @@ const getInvoiceMonth = (dateKey: string, closingDay: number) => {
 
 const addMonthsToInvoice = (
   invoiceMonth: { year: number; month: number },
-  offset: number
+  offset: number,
 ) => {
   const zeroBasedMonth = invoiceMonth.month - 1 + offset;
 
@@ -147,8 +126,9 @@ const splitCurrencyInCents = (totalValue: number, installments: number) => {
   const baseCents = Math.floor(totalCents / installments);
   const remainder = totalCents % installments;
 
-  return Array.from({ length: installments }, (_, index) =>
-    baseCents + (index < remainder ? 1 : 0)
+  return Array.from(
+    { length: installments },
+    (_, index) => baseCents + (index < remainder ? 1 : 0),
   );
 };
 
@@ -168,7 +148,7 @@ const getCreditCardKey = (account: FinanceAccount) =>
 
 const matchesSelectedCreditCard = (
   account: FinanceAccount,
-  selected: FinanceAccount
+  selected: FinanceAccount,
 ) => {
   if (!isCreditCardAccount(account)) return false;
 
@@ -181,43 +161,29 @@ const matchesSelectedCreditCard = (
 
   return (
     account.name === selected.name &&
-    Number(account.dia_vencimento || 0) === Number(selected.dia_vencimento || 0) &&
+    Number(account.dia_vencimento || 0) ===
+      Number(selected.dia_vencimento || 0) &&
     getCreditCardClosingDay(account) === getCreditCardClosingDay(selected)
   );
 };
 
 // 🔥 FORMATA MOEDA DIGITANDO
-const formatCurrencyInput = (
-  value: string
-) => {
-  const numbers = value.replace(
-    /\D/g,
-    ""
-  );
+const formatCurrencyInput = (value: string) => {
+  const numbers = value.replace(/\D/g, "");
 
-  const amount =
-    Number(numbers) / 100;
+  const amount = Number(numbers) / 100;
 
-  return amount.toLocaleString(
-    "pt-BR",
-    {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }
-  );
+  return amount.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 // 🔥 CONVERTE PRA NUMBER
-const parseCurrency = (
-  v: string
-) => {
+const parseCurrency = (v: string) => {
   if (!v) return 0;
 
-  return Number(
-    v
-      .replace(/\./g, "")
-      .replace(",", ".")
-  );
+  return Number(v.replace(/\./g, "").replace(",", "."));
 };
 
 const normalizeSearch = (value: string) =>
@@ -236,184 +202,110 @@ export default function LaunchModal({
   setTransactions,
   onMonthsChanged,
   onSaved,
+  initialValues,
 }: Props) {
-  const [value, setValue] =
-    useState("");
+  const [value, setValue] = useState("");
 
-  const [
-    selectedAccountId,
-    setSelectedAccountId,
-  ] = useState("");
-  const [accountSearch, setAccountSearch] =
-    useState("");
-  const [isAccountSelectOpen, setIsAccountSelectOpen] =
-    useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountSearch, setAccountSearch] = useState("");
+  const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false);
 
-  const [category, setCategory] =
-    useState("");
-  const [
-    categorySearch,
-    setCategorySearch,
-  ] = useState("");
-  const [
-    isCategorySelectOpen,
-    setIsCategorySelectOpen,
-  ] = useState(false);
-  const [
-    categoryManageSearch,
-    setCategoryManageSearch,
-  ] = useState("");
+  const [category, setCategory] = useState("");
+  const [categorySearch, setCategorySearch] = useState("");
+  const [isCategorySelectOpen, setIsCategorySelectOpen] = useState(false);
+  const [categoryManageSearch, setCategoryManageSearch] = useState("");
 
-  const [categories, setCategories] =
-    useState<FinanceCategory[]>([]);
-  const [categoryGroupId, setCategoryGroupId] =
-    useState("");
+  const [categories, setCategories] = useState<FinanceCategory[]>([]);
+  const [categoryGroupId, setCategoryGroupId] = useState("");
 
-  const [
-    showCategoriesModal,
-    setShowCategoriesModal,
-  ] = useState(false);
+  const [showCategoriesModal, setShowCategoriesModal] = useState(false);
 
-  const [
-    showAddCategoryModal,
-    setShowAddCategoryModal,
-  ] = useState(false);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
 
-  const [
-    newCategoryName,
-    setNewCategoryName,
-  ] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
 
-  const [
-    isSavingCategory,
-    setIsSavingCategory,
-  ] = useState(false);
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
 
-  const [
-    editingCategory,
-    setEditingCategory,
-  ] = useState<FinanceCategory | null>(null);
+  const [editingCategory, setEditingCategory] =
+    useState<FinanceCategory | null>(null);
 
-  const [
-    editingCategoryName,
-    setEditingCategoryName,
-  ] = useState("");
+  const [editingCategoryName, setEditingCategoryName] = useState("");
 
-  const [
-    isEditingCategory,
-    setIsEditingCategory,
-  ] = useState(false);
+  const [isEditingCategory, setIsEditingCategory] = useState(false);
 
-  const [
-    categoryToDelete,
-    setCategoryToDelete,
-  ] = useState<FinanceCategory | null>(null);
+  const [categoryToDelete, setCategoryToDelete] =
+    useState<FinanceCategory | null>(null);
 
-  const [
-    isDeletingCategory,
-    setIsDeletingCategory,
-  ] = useState(false);
+  const [isDeletingCategory, setIsDeletingCategory] = useState(false);
 
-  const [note, setNote] =
-    useState("");
-  const [installments, setInstallments] =
-    useState("1");
-  const [customInstallments, setCustomInstallments] =
-    useState("");
+  const [note, setNote] = useState("");
+  const [installments, setInstallments] = useState("1");
+  const [customInstallments, setCustomInstallments] = useState("");
 
-  const [date, setDate] =
-    useState("");
+  const [date, setDate] = useState("");
 
-  const [isSaving, setIsSaving] =
-    useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const isSavingRef =
-    useRef(false);
+  const isSavingRef = useRef(false);
 
-  const variableAccounts =
-    useMemo(() => {
-      return accounts.filter(
-        (acc) =>
-          acc.type === "VARIABLE"
-      );
-    }, [accounts]);
+  const variableAccounts = useMemo(() => {
+    return accounts.filter((acc) => acc.type === "VARIABLE");
+  }, [accounts]);
 
-  const filteredVariableAccounts =
-    useMemo(() => {
-      const search =
-        normalizeSearch(accountSearch);
+  const filteredVariableAccounts = useMemo(() => {
+    const search = normalizeSearch(accountSearch);
 
-      if (!search) return variableAccounts;
+    if (!search) return variableAccounts;
 
-      return variableAccounts.filter((account) =>
-        normalizeSearch(account.name).includes(search)
-      );
-    }, [accountSearch, variableAccounts]);
+    return variableAccounts.filter((account) =>
+      normalizeSearch(account.name).includes(search),
+    );
+  }, [accountSearch, variableAccounts]);
 
-  const selectedAccount =
-    useMemo(() => {
-      return accounts.find(
-        (acc) =>
-          acc.id ===
-          selectedAccountId
-      );
-    }, [
-      accounts,
-      selectedAccountId,
-    ]);
+  const selectedAccount = useMemo(() => {
+    return accounts.find((acc) => acc.id === selectedAccountId);
+  }, [accounts, selectedAccountId]);
 
-  const isCreditCardSelected =
-    isCreditCardAccount(selectedAccount);
+  const isCreditCardSelected = isCreditCardAccount(selectedAccount);
   const isPixSelected = isPixAccount(selectedAccount);
   const fieldLabelClass = "mb-1 block text-xs font-semibold text-zinc-400";
 
-  const filteredCategories =
-    useMemo(() => {
-      const search =
-        normalizeSearch(
-          categorySearch
-        );
+  const filteredCategories = useMemo(() => {
+    const search = normalizeSearch(categorySearch);
 
-      if (!search) return categories;
+    if (!search) return categories;
 
-      return categories.filter((item) =>
-        normalizeSearch(item.name).includes(search)
-      );
-    }, [
-      categories,
-      categorySearch,
-    ]);
+    return categories.filter((item) =>
+      normalizeSearch(item.name).includes(search),
+    );
+  }, [categories, categorySearch]);
 
-  const filteredManagedCategories =
-    useMemo(() => {
-      const search =
-        normalizeSearch(
-          categoryManageSearch
-        );
+  const filteredManagedCategories = useMemo(() => {
+    const search = normalizeSearch(categoryManageSearch);
 
-      if (!search) return categories;
+    if (!search) return categories;
 
-      return categories.filter((item) =>
-        normalizeSearch(item.name).includes(search)
-      );
-    }, [
-      categories,
-      categoryManageSearch,
-    ]);
+    return categories.filter((item) =>
+      normalizeSearch(item.name).includes(search),
+    );
+  }, [categories, categoryManageSearch]);
 
   useEffect(() => {
     if (!open) return;
 
     let isMounted = true;
 
-    setValue("");
-    setNote("");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setValue(
+      initialValues?.value
+        ? formatCurrencyInput(String(Math.round(initialValues.value * 100)))
+        : "",
+    );
+    setNote(initialValues?.note || "");
     setInstallments("1");
     setCustomInstallments("");
-    setDate(
-      getTodayDateKey()
-    );
-    setCategory("");
+    setDate(initialValues?.date || getTodayDateKey());
+    setCategory(initialValues?.category || "");
     setAccountSearch("");
     setIsAccountSelectOpen(false);
     setCategorySearch("");
@@ -433,30 +325,26 @@ export default function LaunchModal({
 
     isSavingRef.current = false;
 
-    const primaryCreditCard =
-      variableAccounts.find(
-        (acc) =>
-          isCreditCardAccount(acc) &&
-          acc.isPrimaryCreditCard === true &&
-          acc.isArchived !== true
-      );
+    const primaryCreditCard = variableAccounts.find(
+      (acc) =>
+        isCreditCardAccount(acc) &&
+        acc.isPrimaryCreditCard === true &&
+        acc.isArchived !== true,
+    );
 
-    const creditCard =
-      variableAccounts.find(
-        (acc) =>
-          isCreditCardAccount(acc) &&
-          acc.isArchived !== true
-      );
+    const creditCard = variableAccounts.find(
+      (acc) => isCreditCardAccount(acc) && acc.isArchived !== true,
+    );
+
+    const initialAccount = initialValues?.accountId
+      ? variableAccounts.find((acc) => acc.id === initialValues.accountId)
+      : null;
 
     const defaultAccount =
-      primaryCreditCard ||
-      creditCard ||
-      variableAccounts[0];
+      initialAccount || primaryCreditCard || creditCard || variableAccounts[0];
 
     if (defaultAccount) {
-      setSelectedAccountId(
-        defaultAccount.id
-      );
+      setSelectedAccountId(defaultAccount.id);
     } else {
       setSelectedAccountId("");
     }
@@ -475,7 +363,7 @@ export default function LaunchModal({
           profile.groupId,
           {
             preset: getCategorySeedPreset(profile.email),
-          }
+          },
         );
 
         if (isMounted) {
@@ -496,7 +384,7 @@ export default function LaunchModal({
     return () => {
       isMounted = false;
     };
-  }, [open, variableAccounts]);
+  }, [initialValues, open, variableAccounts]);
 
   const closeMainModal = () => {
     if (isSavingRef.current) return;
@@ -512,9 +400,7 @@ export default function LaunchModal({
     setInstallments("1");
     setCustomInstallments("");
 
-    setDate(
-      getTodayDateKey()
-    );
+    setDate(getTodayDateKey());
 
     onClose();
   };
@@ -546,15 +432,17 @@ export default function LaunchModal({
         categories.length > 0
           ? Math.max(
               ...categories.map((item, index) =>
-                Number.isFinite(Number(item.order)) ? Number(item.order) : index
-              )
+                Number.isFinite(Number(item.order))
+                  ? Number(item.order)
+                  : index,
+              ),
             ) + 1
           : 0;
 
       const newCategory = await createCategory(
         categoryGroupId,
         trimmedName,
-        nextOrder
+        nextOrder,
       );
 
       const updatedCategories = [...categories, newCategory].sort((a, b) => {
@@ -601,12 +489,15 @@ export default function LaunchModal({
     setIsEditingCategory(true);
 
     try {
-      const nextName = await updateCategoryName(editingCategory.id, trimmedName);
+      const nextName = await updateCategoryName(
+        editingCategory.id,
+        trimmedName,
+      );
 
       setCategories((prev) =>
         prev.map((item) =>
-          item.id === editingCategory.id ? { ...item, name: nextName } : item
-        )
+          item.id === editingCategory.id ? { ...item, name: nextName } : item,
+        ),
       );
 
       if (category === editingCategory.name) {
@@ -633,7 +524,7 @@ export default function LaunchModal({
       await deleteCategory(categoryToDelete.id);
 
       setCategories((prev) =>
-        prev.filter((item) => item.id !== categoryToDelete.id)
+        prev.filter((item) => item.id !== categoryToDelete.id),
       );
 
       if (category === categoryToDelete.name) {
@@ -664,12 +555,7 @@ export default function LaunchModal({
     setSelectedAccountId(nextAccountId);
     closeAccountSelect();
 
-    const nextAccount =
-      accounts.find(
-        (acc) =>
-          acc.id ===
-          nextAccountId
-      );
+    const nextAccount = accounts.find((acc) => acc.id === nextAccountId);
 
     if (!isCreditCardAccount(nextAccount) && !isPixAccount(nextAccount)) {
       setCategory("");
@@ -748,7 +634,7 @@ export default function LaunchModal({
 
   const getOrCreateCreditCardForMonth = async (
     targetMonthId: string,
-    selected: FinanceAccount
+    selected: FinanceAccount,
   ) => {
     const targetAccounts =
       targetMonthId === monthId
@@ -756,21 +642,21 @@ export default function LaunchModal({
         : ((await getAccountsByMonth(targetMonthId)) as FinanceAccount[]);
 
     const existingCard = targetAccounts.find((acc) =>
-      matchesSelectedCreditCard(acc, selected)
+      matchesSelectedCreditCard(acc, selected),
     );
 
     if (existingCard) return existingCard;
 
     const sameTypeAccounts = targetAccounts.filter(
-      (acc) => acc.type === selected.type
+      (acc) => acc.type === selected.type,
     );
 
     const nextOrder =
       sameTypeAccounts.length > 0
         ? Math.max(
             ...sameTypeAccounts.map((acc, index) =>
-              Number.isFinite(Number(acc.order)) ? Number(acc.order) : index
-            )
+              Number.isFinite(Number(acc.order)) ? Number(acc.order) : index,
+            ),
           ) + 1
         : 0;
 
@@ -788,483 +674,380 @@ export default function LaunchModal({
     });
   };
 
-  const handleSave =
-    async () => {
-      if (
-        isSavingRef.current
-      )
-        return;
+  const handleSave = async () => {
+    if (isSavingRef.current) return;
 
-      if (
-        !monthId ||
-        !auth.currentUser
-      )
-        return;
+    if (!monthId || !auth.currentUser) return;
 
-      const parsedValue =
-        parseCurrency(value);
-      const parsedInstallments = isCreditCardSelected
-        ? installments === CUSTOM_INSTALLMENTS
-          ? Number(customInstallments || 0)
-          : Number(installments || 1)
-        : 1;
+    const parsedValue = parseCurrency(value);
+    const parsedInstallments = isCreditCardSelected
+      ? installments === CUSTOM_INSTALLMENTS
+        ? Number(customInstallments || 0)
+        : Number(installments || 1)
+      : 1;
 
-      if (!parsedValue) {
-        toast.error(
-          "Informe o valor do lançamento."
-        );
+    if (!parsedValue) {
+      toast.error("Informe o valor do lançamento.");
 
-        return;
-      }
+      return;
+    }
 
-      if (
-        isCreditCardSelected &&
-        (!Number.isInteger(parsedInstallments) ||
-          parsedInstallments < 1 ||
-          parsedInstallments > MAX_INSTALLMENTS)
-      ) {
-        toast.error(`Informe entre 1 e ${MAX_INSTALLMENTS} parcelas.`);
-        return;
-      }
+    if (
+      isCreditCardSelected &&
+      (!Number.isInteger(parsedInstallments) ||
+        parsedInstallments < 1 ||
+        parsedInstallments > MAX_INSTALLMENTS)
+    ) {
+      toast.error(`Informe entre 1 e ${MAX_INSTALLMENTS} parcelas.`);
+      return;
+    }
 
-      const selected =
-        accounts.find(
-          (acc) =>
-            acc.id ===
-            selectedAccountId
-        );
+    const selected = accounts.find((acc) => acc.id === selectedAccountId);
 
-      if (!selected) {
-        toast.error(
-          "Selecione uma conta."
-        );
+    if (!selected) {
+      toast.error("Selecione uma conta.");
 
-        return;
-      }
+      return;
+    }
 
-      if (
-        (isCreditCardSelected || isPixSelected) &&
-        !category
-      ) {
-        toast.error(
-          "Selecione uma categoria."
-        );
+    if ((isCreditCardSelected || isPixSelected) && !category) {
+      toast.error("Selecione uma categoria.");
 
-        return;
-      }
+      return;
+    }
 
-      const launcherName =
-        resolveLauncherName();
+    const launcherName = resolveLauncherName();
 
-      const launchDate =
-        date;
+    const launchDate = date;
 
-      if (!launchDate) {
-        toast.error(
-          "Informe a data do lançamento."
-        );
+    if (!launchDate) {
+      toast.error("Informe a data do lançamento.");
 
-        return;
-      }
+      return;
+    }
 
-      isSavingRef.current = true;
+    isSavingRef.current = true;
 
-      setIsSaving(true);
+    setIsSaving(true);
 
-      let targetMonthId =
-        monthId;
+    let targetMonthId = monthId;
 
-      let targetAccount =
-        selected;
+    let targetAccount = selected;
 
-      let shouldRefreshMonths =
-        false;
+    let shouldRefreshMonths = false;
 
-      try {
-        const profile = await ensureUserProfile(
-          auth.currentUser
-        );
+    try {
+      const profile = await ensureUserProfile(auth.currentUser);
 
-        if (isCreditCardSelected && parsedInstallments > 1) {
-          if (selected.isArchived === true) {
-            toast.error(
-              "Este cartão está arquivado e não será lançado em faturas futuras."
-            );
-            return;
-          }
-
-          const firstInvoiceMonth = getInvoiceMonth(
-            launchDate,
-            getCreditCardClosingDay(selected)
+      if (isCreditCardSelected && parsedInstallments > 1) {
+        if (selected.isArchived === true) {
+          toast.error(
+            "Este cartão está arquivado e não será lançado em faturas futuras.",
           );
-          const installmentGroupId = getInstallmentGroupId();
-          const installmentValues = splitCurrencyInCents(
-            parsedValue,
-            parsedInstallments
+          return;
+        }
+
+        const firstInvoiceMonth = getInvoiceMonth(
+          launchDate,
+          getCreditCardClosingDay(selected),
+        );
+        const installmentGroupId = getInstallmentGroupId();
+        const installmentValues = splitCurrencyInCents(
+          parsedValue,
+          parsedInstallments,
+        );
+        let months = (await getAllMonths(profile.groupId)) as MonthDoc[];
+        let firstTargetMonth = months.find(
+          (item) =>
+            item.year === firstInvoiceMonth.year &&
+            item.month === firstInvoiceMonth.month,
+        );
+
+        if (!firstTargetMonth) {
+          const createdMonthId = await createMonth(
+            firstInvoiceMonth.year,
+            firstInvoiceMonth.month,
+            auth.currentUser.uid,
+            profile.groupId,
           );
-          let months = (await getAllMonths(profile.groupId)) as MonthDoc[];
-          let firstTargetMonth = months.find(
+
+          firstTargetMonth = {
+            id: createdMonthId,
+            year: firstInvoiceMonth.year,
+            month: firstInvoiceMonth.month,
+          };
+          months = [...months, firstTargetMonth];
+          shouldRefreshMonths = true;
+        }
+
+        const installmentAccount = await getOrCreateCreditCardForMonth(
+          firstTargetMonth.id,
+          selected,
+        );
+        const firstInstallmentNote = note.trim()
+          ? `${note.trim()} (1/${parsedInstallments})`
+          : `Parcela 1/${parsedInstallments}`;
+        const userName =
+          auth.currentUser.displayName || auth.currentUser.email || "";
+
+        await addTransaction(firstTargetMonth.id, {
+          value: installmentValues[0] / 100,
+          accountId: installmentAccount.id,
+          category,
+          note: firstInstallmentNote,
+          userId: auth.currentUser.uid,
+          userName,
+          launcherId: auth.currentUser.uid,
+          launcherName,
+          date: launchDate,
+          installmentGroupId,
+          installmentCurrent: 1,
+          installmentTotal: parsedInstallments,
+        });
+
+        for (let index = 1; index < parsedInstallments; index += 1) {
+          const invoiceMonth = addMonthsToInvoice(firstInvoiceMonth, index);
+          const existingFutureMonth = months.find(
             (item) =>
-              item.year === firstInvoiceMonth.year &&
-              item.month === firstInvoiceMonth.month
+              item.year === invoiceMonth.year &&
+              item.month === invoiceMonth.month,
           );
 
-          if (!firstTargetMonth) {
-            const createdMonthId = await createMonth(
-              firstInvoiceMonth.year,
-              firstInvoiceMonth.month,
-              auth.currentUser.uid,
-              profile.groupId
-            );
+          if (!existingFutureMonth) continue;
 
-            firstTargetMonth = {
-              id: createdMonthId,
-              year: firstInvoiceMonth.year,
-              month: firstInvoiceMonth.month,
-            };
-            months = [...months, firstTargetMonth];
-            shouldRefreshMonths = true;
-          }
-
-          const installmentAccount = await getOrCreateCreditCardForMonth(
-            firstTargetMonth.id,
-            selected
+          const futureInstallmentAccount = await getOrCreateCreditCardForMonth(
+            existingFutureMonth.id,
+            selected,
           );
-          const firstInstallmentNote = note.trim()
-            ? `${note.trim()} (1/${parsedInstallments})`
-            : `Parcela 1/${parsedInstallments}`;
-          const userName =
-            auth.currentUser.displayName || auth.currentUser.email || "";
+          const installmentCurrent = index + 1;
+          const installmentNote = note.trim()
+            ? `${note.trim()} (${installmentCurrent}/${parsedInstallments})`
+            : `Parcela ${installmentCurrent}/${parsedInstallments}`;
 
-          await addTransaction(firstTargetMonth.id, {
-            value: installmentValues[0] / 100,
-            accountId: installmentAccount.id,
+          await addTransaction(existingFutureMonth.id, {
+            value: installmentValues[index] / 100,
+            accountId: futureInstallmentAccount.id,
             category,
-            note: firstInstallmentNote,
+            note: installmentNote,
             userId: auth.currentUser.uid,
             userName,
             launcherId: auth.currentUser.uid,
             launcherName,
             date: launchDate,
             installmentGroupId,
-            installmentCurrent: 1,
+            installmentCurrent,
             installmentTotal: parsedInstallments,
           });
-
-          for (let index = 1; index < parsedInstallments; index += 1) {
-            const invoiceMonth = addMonthsToInvoice(firstInvoiceMonth, index);
-            const existingFutureMonth = months.find(
-              (item) =>
-                item.year === invoiceMonth.year &&
-                item.month === invoiceMonth.month
-            );
-
-            if (!existingFutureMonth) continue;
-
-            const futureInstallmentAccount =
-              await getOrCreateCreditCardForMonth(
-                existingFutureMonth.id,
-                selected
-              );
-            const installmentCurrent = index + 1;
-            const installmentNote = note.trim()
-              ? `${note.trim()} (${installmentCurrent}/${parsedInstallments})`
-              : `Parcela ${installmentCurrent}/${parsedInstallments}`;
-
-            await addTransaction(existingFutureMonth.id, {
-              value: installmentValues[index] / 100,
-              accountId: futureInstallmentAccount.id,
-              category,
-              note: installmentNote,
-              userId: auth.currentUser.uid,
-              userName,
-              launcherId: auth.currentUser.uid,
-              launcherName,
-              date: launchDate,
-              installmentGroupId,
-              installmentCurrent,
-              installmentTotal: parsedInstallments,
-            });
-          }
-
-          const nextInvoiceMonth = addMonthsToInvoice(firstInvoiceMonth, 1);
-
-          await createInstallmentPurchase({
-            groupId: profile.groupId,
-            creditCardKey: getCreditCardKey(selected),
-            cardName: selected.name,
-            dia_vencimento: selected.dia_vencimento,
-            dia_fechamento: getCreditCardClosingDay(selected),
-            category,
-            note,
-            purchaseDate: launchDate,
-            firstYear: nextInvoiceMonth.year,
-            firstMonth: nextInvoiceMonth.month,
-            firstInstallmentNumber: 2,
-            totalPurchaseInstallments: parsedInstallments,
-            installmentValuesCents: installmentValues.slice(1),
-            userId: auth.currentUser.uid,
-            userName,
-            launcherId: auth.currentUser.uid,
-            launcherName,
-            installmentGroupId,
-          });
-
-          if (shouldRefreshMonths || firstTargetMonth.id !== monthId) {
-            await onMonthsChanged?.(firstTargetMonth.id);
-          }
-
-          const trans =
-            (await getTransactions(monthId)) as TransactionRecord[];
-
-          setTransactions(trans);
-          await onSaved?.(firstTargetMonth.id);
-
-          setValue("");
-          setCategory("");
-          setNote("");
-          setInstallments("1");
-          setCustomInstallments("");
-          setDate(getTodayDateKey());
-          onClose();
-
-          toast.success("Lançamento parcelado feito com sucesso.");
-          return;
         }
 
-        if (
-          isCreditCardSelected ||
-          isPixSelected
-        ) {
-          const invoiceMonth =
-            getInvoiceMonth(
-              launchDate,
-              isPixSelected
-                ? getAccountClosingDay(selected)
-                : getCreditCardClosingDay(selected)
-            );
+        const nextInvoiceMonth = addMonthsToInvoice(firstInvoiceMonth, 1);
 
-          const months =
-            (await getAllMonths(
-              profile.groupId
-            )) as MonthDoc[];
-
-          const existingMonth =
-            months.find(
-              (month) =>
-                month.year ===
-                  invoiceMonth.year &&
-                month.month ===
-                  invoiceMonth.month
-            );
-
-          if (existingMonth) {
-            targetMonthId =
-              existingMonth.id;
-          } else {
-            targetMonthId =
-              await createMonth(
-                invoiceMonth.year,
-                invoiceMonth.month,
-                auth.currentUser
-                  .uid,
-                profile.groupId
-              );
-
-            shouldRefreshMonths =
-              true;
-          }
-
-          if (
-            targetMonthId !==
-            monthId
-          ) {
-            if (isCreditCardSelected && selected.isArchived === true) {
-              toast.error(
-                "Este cartão está arquivado e não será lançado em faturas futuras."
-              );
-              return;
-            }
-
-            const targetAccounts =
-              (await getAccountsByMonth(
-                targetMonthId
-              )) as FinanceAccount[];
-
-            let targetClosingAccount = isPixSelected
-              ? targetAccounts.find((acc) => isPixAccount(acc))
-              : targetAccounts.find((acc) => matchesSelectedCreditCard(acc, selected));
-
-            if (!targetClosingAccount) {
-              const sameTypeAccounts = targetAccounts.filter(
-                (acc) => acc.type === selected.type
-              );
-
-              const nextOrder =
-                sameTypeAccounts.length > 0
-                  ? Math.max(
-                      ...sameTypeAccounts.map((acc, index) =>
-                        Number.isFinite(Number(acc.order))
-                          ? Number(acc.order)
-                          : index
-                      )
-                    ) + 1
-                  : 0;
-
-              targetClosingAccount = await createAccount(targetMonthId, {
-                name: selected.name,
-                type: selected.type,
-                value: 0,
-                ...(isPixSelected
-                  ? {}
-                  : { dia_vencimento: selected.dia_vencimento }),
-                dia_fechamento: isPixSelected
-                  ? getAccountClosingDay(selected)
-                  : getCreditCardClosingDay(selected),
-                ...(isPixSelected
-                  ? {}
-                  : {
-                      isCreditCard: true,
-                      creditCardKey: getCreditCardKey(selected),
-                      isPrimaryCreditCard:
-                        selected.isPrimaryCreditCard === true,
-                    }),
-                isPaid: false,
-                order: nextOrder,
-              });
-            }
-
-            targetAccount =
-              targetClosingAccount;
-          }
-        }
-
-        const payload = {
-          value: parsedValue,
-
-          accountId:
-            targetAccount.id,
-
-          category:
-            isCreditCardSelected || isPixSelected
-              ? category
-              : "",
-
+        await createInstallmentPurchase({
+          groupId: profile.groupId,
+          creditCardKey: getCreditCardKey(selected),
+          cardName: selected.name,
+          dia_vencimento: selected.dia_vencimento,
+          dia_fechamento: getCreditCardClosingDay(selected),
+          category,
           note,
-
-          userId:
-            auth.currentUser
-              .uid,
-
-          userName:
-            auth.currentUser
-              .displayName ||
-            auth.currentUser
-              .email ||
-            "",
-
-          launcherId:
-            auth.currentUser
-              .uid,
-
+          purchaseDate: launchDate,
+          firstYear: nextInvoiceMonth.year,
+          firstMonth: nextInvoiceMonth.month,
+          firstInstallmentNumber: 2,
+          totalPurchaseInstallments: parsedInstallments,
+          installmentValuesCents: installmentValues.slice(1),
+          userId: auth.currentUser.uid,
+          userName,
+          launcherId: auth.currentUser.uid,
           launcherName,
+          installmentGroupId,
+        });
 
-          date: launchDate,
-        };
-
-        await addTransaction(
-          targetMonthId,
-          payload
-        );
-
-        if (
-          shouldRefreshMonths ||
-          targetMonthId !==
-            monthId
-        ) {
-          await onMonthsChanged?.(
-            targetMonthId
-          );
+        if (shouldRefreshMonths || firstTargetMonth.id !== monthId) {
+          await onMonthsChanged?.(firstTargetMonth.id);
         }
 
-        if (
-          !isCreditCardAccount(selected)
-        ) {
-          const newValue =
-            Number(
-              targetAccount.value ||
-                0
-            ) + parsedValue;
+        const trans = (await getTransactions(monthId)) as TransactionRecord[];
 
-          await updateAccountValue(
-            targetMonthId,
-            targetAccount.id,
-            newValue
-          );
-
-          if (targetMonthId === monthId) {
-            setAccounts(
-              (prev) =>
-                prev.map(
-                  (acc) =>
-                    acc.id ===
-                    selected.id
-                      ? {
-                          ...acc,
-                          value:
-                            newValue,
-                        }
-                      : acc
-                )
-            );
-          }
-        }
-
-        const trans =
-          (await getTransactions(
-            monthId
-          )) as TransactionRecord[];
-
-        setTransactions(
-          trans
-        );
-
-        await onSaved?.(
-          targetMonthId
-        );
+        setTransactions(trans);
+        await onSaved?.(firstTargetMonth.id);
 
         setValue("");
         setCategory("");
         setNote("");
         setInstallments("1");
         setCustomInstallments("");
-
-        setDate(
-          getTodayDateKey()
-        );
-
+        setDate(getTodayDateKey());
         onClose();
 
-        toast.success(
-          "Lançamento feito com sucesso."
-        );
-      } catch (error) {
-        console.error(error);
-
-        toast.error(
-          "Não foi possível salvar o lançamento."
-        );
-      } finally {
-        isSavingRef.current =
-          false;
-
-        setIsSaving(false);
+        toast.success("Lançamento parcelado feito com sucesso.");
+        return;
       }
-    };
+
+      if (isCreditCardSelected || isPixSelected) {
+        const invoiceMonth = getInvoiceMonth(
+          launchDate,
+          isPixSelected
+            ? getAccountClosingDay(selected)
+            : getCreditCardClosingDay(selected),
+        );
+
+        const months = (await getAllMonths(profile.groupId)) as MonthDoc[];
+
+        const existingMonth = months.find(
+          (month) =>
+            month.year === invoiceMonth.year &&
+            month.month === invoiceMonth.month,
+        );
+
+        if (existingMonth) {
+          targetMonthId = existingMonth.id;
+        } else {
+          targetMonthId = await createMonth(
+            invoiceMonth.year,
+            invoiceMonth.month,
+            auth.currentUser.uid,
+            profile.groupId,
+          );
+
+          shouldRefreshMonths = true;
+        }
+
+        if (targetMonthId !== monthId) {
+          if (isCreditCardSelected && selected.isArchived === true) {
+            toast.error(
+              "Este cartão está arquivado e não será lançado em faturas futuras.",
+            );
+            return;
+          }
+
+          const targetAccounts = (await getAccountsByMonth(
+            targetMonthId,
+          )) as FinanceAccount[];
+
+          let targetClosingAccount = isPixSelected
+            ? targetAccounts.find((acc) => isPixAccount(acc))
+            : targetAccounts.find((acc) =>
+                matchesSelectedCreditCard(acc, selected),
+              );
+
+          if (!targetClosingAccount) {
+            const sameTypeAccounts = targetAccounts.filter(
+              (acc) => acc.type === selected.type,
+            );
+
+            const nextOrder =
+              sameTypeAccounts.length > 0
+                ? Math.max(
+                    ...sameTypeAccounts.map((acc, index) =>
+                      Number.isFinite(Number(acc.order))
+                        ? Number(acc.order)
+                        : index,
+                    ),
+                  ) + 1
+                : 0;
+
+            targetClosingAccount = await createAccount(targetMonthId, {
+              name: selected.name,
+              type: selected.type,
+              value: 0,
+              ...(isPixSelected
+                ? {}
+                : { dia_vencimento: selected.dia_vencimento }),
+              dia_fechamento: isPixSelected
+                ? getAccountClosingDay(selected)
+                : getCreditCardClosingDay(selected),
+              ...(isPixSelected
+                ? {}
+                : {
+                    isCreditCard: true,
+                    creditCardKey: getCreditCardKey(selected),
+                    isPrimaryCreditCard: selected.isPrimaryCreditCard === true,
+                  }),
+              isPaid: false,
+              order: nextOrder,
+            });
+          }
+
+          targetAccount = targetClosingAccount;
+        }
+      }
+
+      const payload = {
+        value: parsedValue,
+
+        accountId: targetAccount.id,
+
+        category: isCreditCardSelected || isPixSelected ? category : "",
+
+        note,
+
+        userId: auth.currentUser.uid,
+
+        userName: auth.currentUser.displayName || auth.currentUser.email || "",
+
+        launcherId: auth.currentUser.uid,
+
+        launcherName,
+
+        date: launchDate,
+      };
+
+      await addTransaction(targetMonthId, payload);
+
+      if (shouldRefreshMonths || targetMonthId !== monthId) {
+        await onMonthsChanged?.(targetMonthId);
+      }
+
+      if (!isCreditCardAccount(selected)) {
+        const newValue = Number(targetAccount.value || 0) + parsedValue;
+
+        await updateAccountValue(targetMonthId, targetAccount.id, newValue);
+
+        if (targetMonthId === monthId) {
+          setAccounts((prev) =>
+            prev.map((acc) =>
+              acc.id === selected.id
+                ? {
+                    ...acc,
+                    value: newValue,
+                  }
+                : acc,
+            ),
+          );
+        }
+      }
+
+      const trans = (await getTransactions(monthId)) as TransactionRecord[];
+
+      setTransactions(trans);
+
+      await onSaved?.(targetMonthId);
+
+      setValue("");
+      setCategory("");
+      setNote("");
+      setInstallments("1");
+      setCustomInstallments("");
+
+      setDate(getTodayDateKey());
+
+      onClose();
+
+      toast.success("Lançamento feito com sucesso.");
+    } catch (error) {
+      console.error(error);
+
+      toast.error("Não foi possível salvar o lançamento.");
+    } finally {
+      isSavingRef.current = false;
+
+      setIsSaving(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70">
       <form
         className="bg-zinc-900 p-6 rounded-xl w-80 space-y-3 border border-zinc-800"
         onSubmit={(event) => {
@@ -1272,10 +1055,7 @@ export default function LaunchModal({
           handleSave();
         }}
       >
-
-        <h2 className="text-lg font-bold">
-          Novo Lançamento
-        </h2>
+        <h2 className="text-lg font-bold">Novo Lançamento</h2>
 
         {/* 🔥 VALOR */}
         <label className="block">
@@ -1284,13 +1064,7 @@ export default function LaunchModal({
             type="tel"
             inputMode="decimal"
             value={value}
-            onChange={(e) =>
-              setValue(
-                formatCurrencyInput(
-                  e.target.value
-                )
-              )
-            }
+            onChange={(e) => setValue(formatCurrencyInput(e.target.value))}
             placeholder="Valor total"
             required
             disabled={isSaving}
@@ -1303,11 +1077,7 @@ export default function LaunchModal({
           <div
             className="relative min-w-0 flex-1"
             onBlur={(event) => {
-              if (
-                event.currentTarget.contains(
-                  event.relatedTarget
-                )
-              ) {
+              if (event.currentTarget.contains(event.relatedTarget)) {
                 return;
               }
 
@@ -1327,7 +1097,13 @@ export default function LaunchModal({
               aria-expanded={isAccountSelectOpen}
               aria-haspopup="listbox"
             >
-              <span className={selectedAccount ? "truncate text-zinc-100" : "truncate text-zinc-400"}>
+              <span
+                className={
+                  selectedAccount
+                    ? "truncate text-zinc-100"
+                    : "truncate text-zinc-400"
+                }
+              >
                 {selectedAccount?.name || "Selecione a conta"}
               </span>
               <ChevronDown
@@ -1344,9 +1120,7 @@ export default function LaunchModal({
                   <Search size={16} />
                   <input
                     value={accountSearch}
-                    onChange={(event) =>
-                      setAccountSearch(event.target.value)
-                    }
+                    onChange={(event) => setAccountSearch(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
                         event.preventDefault();
@@ -1358,8 +1132,7 @@ export default function LaunchModal({
 
                       event.preventDefault();
 
-                      const firstAccount =
-                        filteredVariableAccounts[0];
+                      const firstAccount = filteredVariableAccounts[0];
 
                       if (firstAccount) {
                         selectAccount(firstAccount.id);
@@ -1390,9 +1163,7 @@ export default function LaunchModal({
                         role="option"
                         aria-selected={selectedAccountId === account.id}
                       >
-                        <span className="min-w-0 truncate">
-                          {account.name}
-                        </span>
+                        <span className="min-w-0 truncate">{account.name}</span>
                         {selectedAccountId === account.id && (
                           <Check
                             size={16}
@@ -1453,7 +1224,7 @@ export default function LaunchModal({
                       <option key={item} value={item}>
                         {item}x
                       </option>
-                    )
+                    ),
                   )}
                   <option value={CUSTOM_INSTALLMENTS}>Outro</option>
                 </select>
@@ -1468,11 +1239,7 @@ export default function LaunchModal({
             <div
               className="relative min-w-0 flex-1"
               onBlur={(event) => {
-                if (
-                  event.currentTarget.contains(
-                    event.relatedTarget
-                  )
-                ) {
+                if (event.currentTarget.contains(event.relatedTarget)) {
                   return;
                 }
 
@@ -1492,7 +1259,13 @@ export default function LaunchModal({
                 aria-expanded={isCategorySelectOpen}
                 aria-haspopup="listbox"
               >
-                <span className={category ? "truncate text-zinc-100" : "truncate text-zinc-400"}>
+                <span
+                  className={
+                    category
+                      ? "truncate text-zinc-100"
+                      : "truncate text-zinc-400"
+                  }
+                >
                   {category || "Selecione a categoria"}
                 </span>
                 <ChevronDown
@@ -1523,8 +1296,7 @@ export default function LaunchModal({
 
                         event.preventDefault();
 
-                        const firstCategory =
-                          filteredCategories[0];
+                        const firstCategory = filteredCategories[0];
 
                         if (firstCategory) {
                           selectCategory(firstCategory.name);
@@ -1555,9 +1327,7 @@ export default function LaunchModal({
                           role="option"
                           aria-selected={category === item.name}
                         >
-                          <span className="min-w-0 truncate">
-                            {item.name}
-                          </span>
+                          <span className="min-w-0 truncate">{item.name}</span>
                           {category === item.name && (
                             <Check
                               size={16}
@@ -1593,11 +1363,7 @@ export default function LaunchModal({
           <span className={fieldLabelClass}>Observação</span>
           <input
             value={note}
-            onChange={(e) =>
-              setNote(
-                e.target.value
-              )
-            }
+            onChange={(e) => setNote(e.target.value)}
             placeholder="Observação"
             disabled={isSaving}
             className="w-full p-2 bg-zinc-800 rounded"
@@ -1610,11 +1376,7 @@ export default function LaunchModal({
           <input
             type="date"
             value={date}
-            onChange={(e) =>
-              setDate(
-                e.target.value
-              )
-            }
+            onChange={(e) => setDate(e.target.value)}
             required
             disabled={isSaving}
             className="w-full p-2 bg-zinc-800 rounded"
@@ -1623,30 +1385,22 @@ export default function LaunchModal({
 
         {/* 🔥 BOTÕES */}
         <div className="flex justify-between pt-2">
-
           <button
-            disabled={
-              isSaving
-            }
+            disabled={isSaving}
             className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
             type="submit"
           >
-            {isSaving
-              ? "Salvando..."
-              : "Salvar"}
+            {isSaving ? "Salvando..." : "Salvar"}
           </button>
 
           <button
             onClick={closeMainModal}
-            disabled={
-              isSaving
-            }
+            disabled={isSaving}
             className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
             type="button"
           >
             Cancelar
           </button>
-
         </div>
       </form>
 
@@ -1654,9 +1408,7 @@ export default function LaunchModal({
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
           <div className="flex max-h-[85dvh] w-full max-w-sm flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 p-5 sm:p-6">
             <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
-              <h2 className="text-lg font-bold">
-                Categorias
-              </h2>
+              <h2 className="text-lg font-bold">Categorias</h2>
 
               <div className="flex items-center gap-2">
                 <button
@@ -1696,9 +1448,7 @@ export default function LaunchModal({
             </label>
 
             {categories.length === 0 ? (
-              <div className="text-zinc-400">
-                Nenhuma categoria cadastrada.
-              </div>
+              <div className="text-zinc-400">Nenhuma categoria cadastrada.</div>
             ) : filteredManagedCategories.length === 0 ? (
               <div className="rounded-lg bg-zinc-800/70 p-4 text-sm text-zinc-500">
                 Nenhuma categoria encontrada.
@@ -1754,17 +1504,13 @@ export default function LaunchModal({
               saveCategory();
             }}
           >
-            <h2 className="text-lg font-bold mb-4">
-              Nova categoria
-            </h2>
+            <h2 className="text-lg font-bold mb-4">Nova categoria</h2>
 
             <label className="block mb-4">
               <span className={fieldLabelClass}>Nome da categoria</span>
               <input
                 value={newCategoryName}
-                onChange={(event) =>
-                  setNewCategoryName(event.target.value)
-                }
+                onChange={(event) => setNewCategoryName(event.target.value)}
                 placeholder="Nome da categoria"
                 disabled={isSavingCategory}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded p-3 outline-none"
@@ -1803,17 +1549,13 @@ export default function LaunchModal({
               saveCategoryName();
             }}
           >
-            <h2 className="text-lg font-bold mb-4">
-              Editar categoria
-            </h2>
+            <h2 className="text-lg font-bold mb-4">Editar categoria</h2>
 
             <label className="block mb-4">
               <span className={fieldLabelClass}>Nome da categoria</span>
               <input
                 value={editingCategoryName}
-                onChange={(event) =>
-                  setEditingCategoryName(event.target.value)
-                }
+                onChange={(event) => setEditingCategoryName(event.target.value)}
                 placeholder="Nome da categoria"
                 disabled={isEditingCategory}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded p-3 outline-none"
@@ -1846,9 +1588,7 @@ export default function LaunchModal({
       {categoryToDelete && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] px-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-sm p-6">
-            <h2 className="text-lg font-bold mb-2">
-              Excluir categoria
-            </h2>
+            <h2 className="text-lg font-bold mb-2">Excluir categoria</h2>
 
             <p className="text-sm text-zinc-400">
               Deseja realmente excluir {categoryToDelete.name}?
