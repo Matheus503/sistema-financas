@@ -890,7 +890,7 @@ function ExtratoContent() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-6 py-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="sticky top-0 z-40 -mx-6 -mt-6 mb-6 flex flex-col gap-4 border-b border-zinc-800/80 bg-black/95 px-6 pb-4 pt-6 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Extrato de cartão</h1>
           <p className="text-zinc-400 text-sm">
@@ -898,7 +898,7 @@ function ExtratoContent() {
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => {
               setLaunchInitialValues(null);

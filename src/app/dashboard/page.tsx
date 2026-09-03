@@ -862,13 +862,13 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-black text-white px-6 py-6">
       {/* HEADER */}
-      <div className="flex justify-between items-start mb-6">
+      <div className="sticky top-0 z-40 -mx-6 -mt-6 mb-6 flex flex-col gap-4 border-b border-zinc-800/80 bg-black/95 px-6 pb-4 pt-6 backdrop-blur xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-zinc-400 text-sm">Controle financeiro</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Link
             href={extratoHref}
             className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl transition"
