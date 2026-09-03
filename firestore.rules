@@ -178,6 +178,12 @@ service cloud.firestore {
           get(/databases/$(database)/documents/months/$(monthId)).data.groupId
         );
       }
+
+      match /invoiceImports/{importId} {
+        allow read, write: if isGroupMember(
+          get(/databases/$(database)/documents/months/$(monthId)).data.groupId
+        );
+      }
     }
 
     match /investments/{investmentId} {

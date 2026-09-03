@@ -1,12 +1,9 @@
 export type NubankEntryKind =
-  | "expense"
-  | "credit_refund"
-  | "invoice_payment"
-  | "discount"
-  | "other";
+  "expense" | "credit_refund" | "invoice_payment" | "discount" | "other";
 
 export type NubankEntry = {
   id: string;
+  reconciliationKey?: string;
   lineNumber: number;
   date: string;
   title: string;
@@ -32,9 +29,9 @@ const parseCsvLine = (line: string) => {
   for (let index = 0; index < line.length; index += 1) {
     const char = line[index];
 
-    if (char === "\"") {
-      if (quoted && line[index + 1] === "\"") {
-        current += "\"";
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') {
+        current += '"';
         index += 1;
       } else {
         quoted = !quoted;
@@ -134,7 +131,7 @@ export const parseNubankCsv = (csvText: string): NubankParseResult => {
     normalizedHeaders[2] !== "amount"
   ) {
     throw new Error(
-      "Formato invalido. O CSV do Nubank deve conter as colunas date,title,amount."
+      "Formato invalido. O CSV do Nubank deve conter as colunas date,title,amount.",
     );
   }
 

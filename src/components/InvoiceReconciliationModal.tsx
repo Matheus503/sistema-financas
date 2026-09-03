@@ -1,18 +1,27 @@
 "use client";
 
-import { FilePlus2, FileUp, Trash2 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { FilePlus2, FileUp, Flag, Trash2 } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { auth } from "../lib/auth";
 import { parseNubankCsv, type NubankEntry } from "../lib/nubankCsvParser";
 import {
   reconcileInvoice,
   type ReconciliationReport,
   type SystemInvoiceEntry,
 } from "../lib/invoiceReconciliation";
+import {
+  getSavedInvoiceImport,
+  saveInvoiceImport,
+  type SavedInvoiceImport,
+  updateIgnoredInvoiceEntryKeys,
+} from "../services/invoiceImportService";
 
 type Props = {
   open: boolean;
   monthLabel: string;
+  monthId?: string | null;
+  creditCardId?: string;
   systemItems: SystemInvoiceEntry[];
   onClose: () => void;
   onCreateMissingEntry?: (entry: NubankEntry) => void;
@@ -21,12 +30,9 @@ type Props = {
 };
 
 type DifferenceItem = {
-  id: string;
-  priority: number;
   title: string;
   amount: number;
   description: string;
-  detail?: string;
   tone: "red" | "yellow" | "orange" | "purple";
 };
 
@@ -41,6 +47,28 @@ const formatDate = (value: string) => {
   if (!match) return value || "-";
 
   return `${match[3]}/${match[2]}/${match[1]}`;
+};
+
+const formatImportedAt = (value: unknown) => {
+  if (!value) return "";
+
+  const maybeTimestamp = value as { toDate?: () => Date };
+  const date =
+    typeof maybeTimestamp.toDate === "function"
+      ? maybeTimestamp.toDate()
+      : value instanceof Date
+        ? value
+        : null;
+
+  if (!date || Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 const systemDescription = (entry: SystemInvoiceEntry) =>
@@ -62,91 +90,29 @@ const amountClassName = (tone: DifferenceItem["tone"]) => {
   return "text-red-300";
 };
 
-const buildOtherDifferenceItems = (report: ReconciliationReport) => {
-  const items: DifferenceItem[] = [];
-
-  report.duplicates.forEach((duplicate, index) => {
-    items.push({
-      id: `duplicate-${index}`,
-      priority: 2,
-      title: "Possível duplicidade",
-      amount: duplicate.potentialDuplicateValue,
-      description: `Valor ${formatMoney(duplicate.value)} aparece ${duplicate.nubankCount}x no Nubank e ${duplicate.systemCount}x no sistema.`,
-      detail:
-        duplicate.systemEntries.length > duplicate.nubankEntries.length
-          ? "Pode haver lançamento duplicado no sistema."
-          : "Pode haver lançamento faltando no sistema.",
-      tone: "red",
-    });
-  });
-
-  report.valueDifferences.forEach((match) => {
-    items.push({
-      id: `value-${match.nubank.id}-${match.system.id}`,
-      priority: 4,
-      title: "Possível diferença de valor",
-      amount: match.valueDifference,
-      description: `${match.nubank.title} x ${systemDescription(match.system)}`,
-      detail: `Nubank ${formatMoney(match.nubank.amount)} | Sistema ${formatMoney(match.system.value)}`,
-      tone: "orange",
-    });
-  });
-
-  report.reviewMatches.forEach((match) => {
-    if (match.hasValueDifference) return;
-
-    items.push({
-      id: `review-${match.nubank.id}-${match.system.id}`,
-      priority: 5,
-      title: "Correspondência para revisar",
-      amount: match.nubank.amount,
-      description: `${match.nubank.title} x ${systemDescription(match.system)}`,
-      detail: `Score ${match.score}% - ${match.reasons
-        .map((reason) => reason.text)
-        .join("; ")}`,
-      tone: "yellow",
-    });
-  });
-
-  report.dateDifferences.forEach((match) => {
-    if (match.confidence !== "high") return;
-
-    items.push({
-      id: `date-${match.nubank.id}-${match.system.id}`,
-      priority: 6,
-      title: "Data diferente",
-      amount: match.nubank.amount,
-      description: `${match.nubank.title} x ${systemDescription(match.system)}`,
-      detail: `Nubank ${formatDate(match.nubank.date)} | Sistema ${formatDate(
-        match.system.date,
-      )}`,
-      tone: "yellow",
-    });
-  });
-
-  return items.sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    return Math.abs(b.amount) - Math.abs(a.amount);
-  });
-};
-
 const DifferenceCard = ({
   item,
   action,
+  cornerAction,
   onAmountClick,
 }: {
   item: DifferenceItem;
   action?: ReactNode;
+  cornerAction?: ReactNode;
   onAmountClick?: () => void;
 }) => (
-  <div className={`rounded-xl border p-4 ${toneClassName(item.tone)}`}>
+  <div
+    className={`relative rounded-xl border p-4 ${cornerAction ? "pl-12" : ""} ${toneClassName(
+      item.tone,
+    )}`}
+  >
+    {cornerAction && (
+      <div className="absolute left-1 top-1">{cornerAction}</div>
+    )}
     <div className="flex items-start justify-between gap-4">
       <div>
         <div className="font-semibold text-zinc-100">{item.title}</div>
         <div className="mt-1 text-sm text-zinc-300">{item.description}</div>
-        {item.detail && (
-          <div className="mt-1 text-xs text-zinc-400">{item.detail}</div>
-        )}
       </div>
       <div className="flex shrink-0 items-center self-center gap-3">
         {onAmountClick ? (
@@ -179,6 +145,8 @@ const EmptyColumn = ({ text }: { text: string }) => (
 export default function InvoiceReconciliationModal({
   open,
   monthLabel,
+  monthId,
+  creditCardId,
   systemItems,
   onClose,
   onCreateMissingEntry,
@@ -188,12 +156,90 @@ export default function InvoiceReconciliationModal({
   const [nubankEntries, setNubankEntries] = useState<NubankEntry[]>([]);
   const [fileName, setFileName] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [isLoadingImport, setIsLoadingImport] = useState(false);
+  const [isSavingImport, setIsSavingImport] = useState(false);
+  const [showIgnoredEntries, setShowIgnoredEntries] = useState(false);
+  const [savedImport, setSavedImport] = useState<SavedInvoiceImport | null>(
+    null,
+  );
+
+  const ignoredEntryKeys = useMemo(
+    () => new Set(savedImport?.ignoredEntryKeys || []),
+    [savedImport?.ignoredEntryKeys],
+  );
+  const activeNubankEntries = useMemo(
+    () =>
+      nubankEntries.filter(
+        (entry) =>
+          !entry.reconciliationKey ||
+          !ignoredEntryKeys.has(entry.reconciliationKey),
+      ),
+    [ignoredEntryKeys, nubankEntries],
+  );
+  const ignoredNubankEntries = useMemo(
+    () =>
+      nubankEntries.filter(
+        (entry) =>
+          entry.conciliable &&
+          entry.reconciliationKey &&
+          ignoredEntryKeys.has(entry.reconciliationKey),
+      ),
+    [ignoredEntryKeys, nubankEntries],
+  );
 
   const report = useMemo<ReconciliationReport | null>(() => {
     if (!nubankEntries.length) return null;
 
-    return reconcileInvoice(nubankEntries, systemItems);
-  }, [nubankEntries, systemItems]);
+    return reconcileInvoice(activeNubankEntries, systemItems);
+  }, [activeNubankEntries, nubankEntries.length, systemItems]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let isMounted = true;
+
+    const loadSavedImport = async () => {
+      if (!monthId || !creditCardId) {
+        setNubankEntries([]);
+        setFileName("");
+        setSavedImport(null);
+        return;
+      }
+
+      setIsLoadingImport(true);
+
+      try {
+        const currentImport = await getSavedInvoiceImport(
+          monthId,
+          creditCardId,
+        );
+        if (!isMounted) return;
+
+        setSavedImport(currentImport);
+        setNubankEntries(currentImport?.entries || []);
+        setFileName(currentImport?.fileName || "");
+      } catch (error) {
+        console.error("Erro ao carregar importação da fatura:", error);
+
+        if (isMounted) {
+          setSavedImport(null);
+          setNubankEntries([]);
+          setFileName("");
+          toast.error("Não foi possível carregar a última importação.");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingImport(false);
+        }
+      }
+    };
+
+    loadSavedImport();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [creditCardId, monthId, open]);
 
   if (!open) return null;
 
@@ -208,9 +254,30 @@ export default function InvoiceReconciliationModal({
     try {
       const text = await file.text();
       const parsed = parseNubankCsv(text);
-      setNubankEntries(parsed.entries);
+      let nextSavedImport: SavedInvoiceImport | null = null;
+
+      if (monthId && creditCardId) {
+        setIsSavingImport(true);
+        nextSavedImport = await saveInvoiceImport({
+          monthId,
+          creditCardId,
+          fileName: file.name,
+          importedBy: auth.currentUser?.uid || "",
+          rawLineCount: parsed.rawLineCount,
+          headers: parsed.headers,
+          entries: parsed.entries,
+        });
+      }
+
+      setNubankEntries(nextSavedImport?.entries || parsed.entries);
       setFileName(file.name);
-      toast.success("CSV processado com sucesso.");
+      setSavedImport(nextSavedImport);
+      setShowIgnoredEntries(false);
+      toast.success(
+        monthId && creditCardId
+          ? "CSV importado e salvo com sucesso."
+          : "CSV processado com sucesso.",
+      );
     } catch (error) {
       console.error("Erro ao conciliar fatura:", error);
       toast.error(
@@ -218,15 +285,58 @@ export default function InvoiceReconciliationModal({
           ? error.message
           : "Nao foi possivel processar o CSV.",
       );
+    } finally {
+      setIsSavingImport(false);
     }
   };
 
-  const otherDifferences = report ? buildOtherDifferenceItems(report) : [];
+  const toggleIgnoredEntry = async (entry: NubankEntry) => {
+    if (!entry.reconciliationKey) {
+      toast.error("Não foi possível identificar este lançamento no CSV.");
+      return;
+    }
+
+    if (!monthId || !creditCardId) {
+      toast.error("Abra uma fatura de cartão para salvar este ajuste.");
+      return;
+    }
+
+    const currentKeys = savedImport?.ignoredEntryKeys || [];
+    const isIgnored = currentKeys.includes(entry.reconciliationKey);
+    const nextKeys = isIgnored
+      ? currentKeys.filter((key) => key !== entry.reconciliationKey)
+      : [...currentKeys, entry.reconciliationKey];
+    const previousImport = savedImport;
+
+    setSavedImport((current) =>
+      current
+        ? {
+            ...current,
+            ignoredEntryKeys: nextKeys,
+          }
+        : current,
+    );
+
+    try {
+      await updateIgnoredInvoiceEntryKeys(monthId, creditCardId, nextKeys);
+      toast.success(
+        isIgnored
+          ? "Lançamento voltou para a conciliação."
+          : "Lançamento ignorado na conciliação.",
+      );
+    } catch (error) {
+      console.error("Erro ao atualizar lançamento ignorado:", error);
+      setSavedImport(previousImport);
+      toast.error("Não foi possível salvar este ajuste.");
+    }
+  };
+
   const pendingCount = report
-    ? report.missingInSystem.length +
-      report.missingInNubank.length +
-      otherDifferences.length
+    ? report.missingInSystem.length + report.missingInNubank.length
     : 0;
+  const savedImportDate = formatImportedAt(savedImport?.importedAt);
+  const canProcessFile = !isLoadingImport && !isSavingImport;
+
   return (
     <div className="fixed inset-0 z-[70] bg-black/75 px-4 py-6">
       <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-white shadow-2xl">
@@ -245,15 +355,17 @@ export default function InvoiceReconciliationModal({
           </button>
         </div>
 
-        <div className="category-scroll flex-1 overflow-y-auto p-5">
+        <div className="flex min-h-0 flex-1 flex-col p-5">
           <label
             onDragOver={(event) => {
+              if (!canProcessFile) return;
               event.preventDefault();
               setIsDragging(true);
             }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={(event) => {
               event.preventDefault();
+              if (!canProcessFile) return;
               setIsDragging(false);
               processFile(event.dataTransfer.files[0]);
             }}
@@ -268,28 +380,48 @@ export default function InvoiceReconciliationModal({
               <div>
                 <div className="font-semibold">CSV do Nubank</div>
                 <div className="text-sm text-zinc-400">
-                  {fileName || "Arraste aqui ou selecione o arquivo"}
+                  {isLoadingImport
+                    ? "Carregando última importação..."
+                    : fileName || "Arraste aqui ou selecione o arquivo"}
                 </div>
+                {savedImport && savedImportDate && (
+                  <div className="mt-1 text-xs text-zinc-500">
+                    Última importação: {savedImportDate}
+                  </div>
+                )}
               </div>
             </div>
-            <span className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold">
-              Selecionar arquivo
+            <span
+              className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+                canProcessFile ? "bg-purple-600" : "bg-zinc-700 text-zinc-400"
+              }`}
+            >
+              {isSavingImport
+                ? "Salvando..."
+                : savedImport
+                  ? "Substituir arquivo"
+                  : "Selecionar arquivo"}
             </span>
             <input
               type="file"
               accept=".csv,text/csv"
               className="hidden"
+              disabled={!canProcessFile}
               onChange={(event) => processFile(event.target.files?.[0])}
             />
           </label>
 
-          {!report ? (
+          {isLoadingImport ? (
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 text-sm text-zinc-400">
-              Nenhum dado será alterado. A conciliação apenas compara o CSV com
-              os lançamentos que já aparecem nesta fatura.
+              Carregando a última importação salva desta fatura.
+            </div>
+          ) : !report ? (
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 text-sm text-zinc-400">
+              Nenhuma importação salva para esta fatura. Selecione o CSV do
+              Nubank para iniciar a conciliação.
             </div>
           ) : (
-            <div className="space-y-5">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden space-y-5">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
                   <div className="text-xs text-zinc-500">Nubank comparado</div>
@@ -311,34 +443,48 @@ export default function InvoiceReconciliationModal({
                 </div>
               </div>
 
-              {pendingCount === 0 ? (
+              {pendingCount === 0 && ignoredNubankEntries.length === 0 ? (
                 <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-5 text-sm text-green-100">
                   Não encontrei diferença entre os lançamentos conciliáveis do
                   Nubank e os lançamentos desta fatura no sistema.
                 </div>
               ) : (
-                <div className="space-y-5">
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <section className="space-y-3">
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <div className="grid h-full min-h-0 gap-4 lg:grid-cols-2">
+                    <section className="flex min-h-0 flex-col space-y-3">
                       <div className="flex items-center justify-between gap-3">
                         <h4 className="font-semibold text-zinc-100">
                           Não lançado no sistema
                         </h4>
-                        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-                          {report.missingInSystem.length}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {ignoredNubankEntries.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setShowIgnoredEntries((current) => !current)
+                              }
+                              className="rounded-full bg-purple-500/10 px-2 py-0.5 text-xs font-semibold text-purple-200 transition hover:bg-purple-500/20"
+                            >
+                              {showIgnoredEntries ? "Ocultar" : "Ignorados"}{" "}
+                              {ignoredNubankEntries.length}
+                            </button>
+                          )}
+                          <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                            {report.missingInSystem.length}
+                          </span>
+                        </div>
                       </div>
 
-                      {report.missingInSystem.length === 0 ? (
+                      {report.missingInSystem.length === 0 &&
+                      (!showIgnoredEntries ||
+                        ignoredNubankEntries.length === 0) ? (
                         <EmptyColumn text="Nada do Nubank ficou sem lançamento no sistema." />
                       ) : (
-                        <div className="category-scroll max-h-[52vh] space-y-3 overflow-y-auto pr-1">
+                        <div className="category-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                           {report.missingInSystem.map((entry) => (
                             <DifferenceCard
-                              key={entry.id}
+                              key={entry.reconciliationKey || entry.id}
                               item={{
-                                id: `missing-system-${entry.id}`,
-                                priority: 3,
                                 title: "Lançamento não realizado",
                                 amount: entry.amount,
                                 description: `${formatDate(entry.date)} - ${entry.title}`,
@@ -357,13 +503,47 @@ export default function InvoiceReconciliationModal({
                                   </button>
                                 ) : null
                               }
+                              cornerAction={
+                                <button
+                                  type="button"
+                                  onClick={() => toggleIgnoredEntry(entry)}
+                                  className="grid h-8 w-8 place-items-center rounded-lg text-zinc-500 transition hover:bg-purple-500/10 hover:text-purple-200"
+                                  aria-label="Ignorar lançamento"
+                                  title="Ignorar lançamento"
+                                >
+                                  <Flag size={17} />
+                                </button>
+                              }
                             />
                           ))}
+                          {showIgnoredEntries &&
+                            ignoredNubankEntries.map((entry) => (
+                              <DifferenceCard
+                                key={`ignored-${entry.reconciliationKey || entry.id}`}
+                                item={{
+                                  title: "Lançamento não realizado",
+                                  amount: entry.amount,
+                                  description: `${formatDate(entry.date)} - ${entry.title}`,
+                                  tone: "purple",
+                                }}
+                                cornerAction={
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleIgnoredEntry(entry)}
+                                    className="grid h-8 w-8 place-items-center rounded-lg bg-purple-500/15 text-purple-200 transition hover:bg-purple-500/25"
+                                    aria-label="Voltar para a conciliação"
+                                    title="Voltar para a conciliação"
+                                  >
+                                    <Flag size={17} fill="currentColor" />
+                                  </button>
+                                }
+                              />
+                            ))}
                         </div>
                       )}
                     </section>
 
-                    <section className="space-y-3">
+                    <section className="flex min-h-0 flex-col space-y-3">
                       <div className="flex items-center justify-between gap-3">
                         <h4 className="font-semibold text-zinc-100">
                           Não existe no Nubank
@@ -376,13 +556,11 @@ export default function InvoiceReconciliationModal({
                       {report.missingInNubank.length === 0 ? (
                         <EmptyColumn text="Nenhum lançamento do sistema ficou sem par no Nubank." />
                       ) : (
-                        <div className="category-scroll max-h-[52vh] space-y-3 overflow-y-auto pr-1">
+                        <div className="category-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                           {report.missingInNubank.map((entry) => (
                             <DifferenceCard
                               key={entry.id}
                               item={{
-                                id: `missing-nubank-${entry.id}`,
-                                priority: 3,
                                 title: "Não existe no Nubank",
                                 amount: entry.value,
                                 description: `${formatDate(entry.date)} - ${systemDescription(entry)}`,
@@ -412,25 +590,6 @@ export default function InvoiceReconciliationModal({
                       )}
                     </section>
                   </div>
-
-                  {otherDifferences.length > 0 && (
-                    <section className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <h4 className="font-semibold text-zinc-100">
-                          Outros pontos para revisar
-                        </h4>
-                        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-                          {otherDifferences.length}
-                        </span>
-                      </div>
-
-                      <div className="space-y-3">
-                        {otherDifferences.map((item) => (
-                          <DifferenceCard key={item.id} item={item} />
-                        ))}
-                      </div>
-                    </section>
-                  )}
                 </div>
               )}
             </div>

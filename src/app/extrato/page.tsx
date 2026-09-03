@@ -1414,6 +1414,8 @@ function ExtratoContent() {
         <InvoiceReconciliationModal
           open={Boolean(activeReconciliationGroup)}
           monthLabel={activeReconciliationGroup.monthLabel}
+          monthId={activeMonthId}
+          creditCardId={reconciliationCreditCardId}
           systemItems={activeReconciliationGroup.items.map((item) => ({
             id: item.id,
             transactionId: item.transactionId,
