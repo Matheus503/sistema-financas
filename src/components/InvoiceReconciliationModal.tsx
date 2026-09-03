@@ -15,6 +15,7 @@ import {
   saveInvoiceImport,
   type SavedInvoiceImport,
   updateIgnoredInvoiceEntryKeys,
+  updateIgnoredSystemEntryKeys,
 } from "../services/invoiceImportService";
 
 type Props = {
@@ -73,6 +74,9 @@ const formatImportedAt = (value: unknown) => {
 
 const systemDescription = (entry: SystemInvoiceEntry) =>
   `${entry.category || "Lançamento"}${entry.note ? ` - ${entry.note}` : ""}`;
+
+const getSystemEntryKey = (entry: SystemInvoiceEntry) =>
+  [entry.monthId || "", entry.transactionId || entry.id].join("|");
 
 const toneClassName = (tone: DifferenceItem["tone"]) => {
   if (tone === "red") return "border-red-500/25 bg-red-500/10";
@@ -159,6 +163,8 @@ export default function InvoiceReconciliationModal({
   const [isLoadingImport, setIsLoadingImport] = useState(false);
   const [isSavingImport, setIsSavingImport] = useState(false);
   const [showIgnoredEntries, setShowIgnoredEntries] = useState(false);
+  const [showIgnoredSystemEntries, setShowIgnoredSystemEntries] =
+    useState(false);
   const [savedImport, setSavedImport] = useState<SavedInvoiceImport | null>(
     null,
   );
@@ -166,6 +172,10 @@ export default function InvoiceReconciliationModal({
   const ignoredEntryKeys = useMemo(
     () => new Set(savedImport?.ignoredEntryKeys || []),
     [savedImport?.ignoredEntryKeys],
+  );
+  const ignoredSystemEntryKeys = useMemo(
+    () => new Set(savedImport?.ignoredSystemEntryKeys || []),
+    [savedImport?.ignoredSystemEntryKeys],
   );
   const activeNubankEntries = useMemo(
     () =>
@@ -186,12 +196,26 @@ export default function InvoiceReconciliationModal({
       ),
     [ignoredEntryKeys, nubankEntries],
   );
+  const activeSystemItems = useMemo(
+    () =>
+      systemItems.filter(
+        (entry) => !ignoredSystemEntryKeys.has(getSystemEntryKey(entry)),
+      ),
+    [ignoredSystemEntryKeys, systemItems],
+  );
+  const ignoredSystemEntries = useMemo(
+    () =>
+      systemItems.filter((entry) =>
+        ignoredSystemEntryKeys.has(getSystemEntryKey(entry)),
+      ),
+    [ignoredSystemEntryKeys, systemItems],
+  );
 
   const report = useMemo<ReconciliationReport | null>(() => {
     if (!nubankEntries.length) return null;
 
-    return reconcileInvoice(activeNubankEntries, systemItems);
-  }, [activeNubankEntries, nubankEntries.length, systemItems]);
+    return reconcileInvoice(activeNubankEntries, activeSystemItems);
+  }, [activeNubankEntries, activeSystemItems, nubankEntries.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -273,6 +297,7 @@ export default function InvoiceReconciliationModal({
       setFileName(file.name);
       setSavedImport(nextSavedImport);
       setShowIgnoredEntries(false);
+      setShowIgnoredSystemEntries(false);
       toast.success(
         monthId && creditCardId
           ? "CSV importado e salvo com sucesso."
@@ -326,6 +351,43 @@ export default function InvoiceReconciliationModal({
       );
     } catch (error) {
       console.error("Erro ao atualizar lançamento ignorado:", error);
+      setSavedImport(previousImport);
+      toast.error("Não foi possível salvar este ajuste.");
+    }
+  };
+
+  const toggleIgnoredSystemEntry = async (entry: SystemInvoiceEntry) => {
+    if (!monthId || !creditCardId) {
+      toast.error("Abra uma fatura de cartão para salvar este ajuste.");
+      return;
+    }
+
+    const entryKey = getSystemEntryKey(entry);
+    const currentKeys = savedImport?.ignoredSystemEntryKeys || [];
+    const isIgnored = currentKeys.includes(entryKey);
+    const nextKeys = isIgnored
+      ? currentKeys.filter((key) => key !== entryKey)
+      : [...currentKeys, entryKey];
+    const previousImport = savedImport;
+
+    setSavedImport((current) =>
+      current
+        ? {
+            ...current,
+            ignoredSystemEntryKeys: nextKeys,
+          }
+        : current,
+    );
+
+    try {
+      await updateIgnoredSystemEntryKeys(monthId, creditCardId, nextKeys);
+      toast.success(
+        isIgnored
+          ? "Lançamento voltou para a conciliação."
+          : "Lançamento ignorado na conciliação.",
+      );
+    } catch (error) {
+      console.error("Erro ao atualizar lançamento ignorado do sistema:", error);
       setSavedImport(previousImport);
       toast.error("Não foi possível salvar este ajuste.");
     }
@@ -443,7 +505,9 @@ export default function InvoiceReconciliationModal({
                 </div>
               </div>
 
-              {pendingCount === 0 && ignoredNubankEntries.length === 0 ? (
+              {pendingCount === 0 &&
+              ignoredNubankEntries.length === 0 &&
+              ignoredSystemEntries.length === 0 ? (
                 <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-5 text-sm text-green-100">
                   Não encontrei diferença entre os lançamentos conciliáveis do
                   Nubank e os lançamentos desta fatura no sistema.
@@ -548,12 +612,32 @@ export default function InvoiceReconciliationModal({
                         <h4 className="font-semibold text-zinc-100">
                           Não existe no Nubank
                         </h4>
-                        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-                          {report.missingInNubank.length}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {ignoredSystemEntries.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setShowIgnoredSystemEntries(
+                                  (current) => !current,
+                                )
+                              }
+                              className="rounded-full bg-purple-500/10 px-2 py-0.5 text-xs font-semibold text-purple-200 transition hover:bg-purple-500/20"
+                            >
+                              {showIgnoredSystemEntries
+                                ? "Ocultar"
+                                : "Ignorados"}{" "}
+                              {ignoredSystemEntries.length}
+                            </button>
+                          )}
+                          <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                            {report.missingInNubank.length}
+                          </span>
+                        </div>
                       </div>
 
-                      {report.missingInNubank.length === 0 ? (
+                      {report.missingInNubank.length === 0 &&
+                      (!showIgnoredSystemEntries ||
+                        ignoredSystemEntries.length === 0) ? (
                         <EmptyColumn text="Nenhum lançamento do sistema ficou sem par no Nubank." />
                       ) : (
                         <div className="category-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
@@ -579,6 +663,19 @@ export default function InvoiceReconciliationModal({
                                   </button>
                                 ) : null
                               }
+                              cornerAction={
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    toggleIgnoredSystemEntry(entry)
+                                  }
+                                  className="grid h-8 w-8 place-items-center rounded-lg text-zinc-500 transition hover:bg-purple-500/10 hover:text-purple-200"
+                                  aria-label="Ignorar lançamento"
+                                  title="Ignorar lançamento"
+                                >
+                                  <Flag size={17} />
+                                </button>
+                              }
                               onAmountClick={
                                 onEditSystemEntry
                                   ? () => onEditSystemEntry(entry)
@@ -586,6 +683,31 @@ export default function InvoiceReconciliationModal({
                               }
                             />
                           ))}
+                          {showIgnoredSystemEntries &&
+                            ignoredSystemEntries.map((entry) => (
+                              <DifferenceCard
+                                key={`ignored-system-${getSystemEntryKey(entry)}`}
+                                item={{
+                                  title: "Não existe no Nubank",
+                                  amount: entry.value,
+                                  description: `${formatDate(entry.date)} - ${systemDescription(entry)}`,
+                                  tone: "purple",
+                                }}
+                                cornerAction={
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      toggleIgnoredSystemEntry(entry)
+                                    }
+                                    className="grid h-8 w-8 place-items-center rounded-lg bg-purple-500/15 text-purple-200 transition hover:bg-purple-500/25"
+                                    aria-label="Voltar para a conciliação"
+                                    title="Voltar para a conciliação"
+                                  >
+                                    <Flag size={17} fill="currentColor" />
+                                  </button>
+                                }
+                              />
+                            ))}
                         </div>
                       )}
                     </section>

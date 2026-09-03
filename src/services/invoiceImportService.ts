@@ -14,6 +14,7 @@ export type SavedInvoiceImport = {
   headers: string[];
   entries: NubankEntry[];
   ignoredEntryKeys: string[];
+  ignoredSystemEntryKeys: string[];
   totals: {
     gross: number;
     conciliable: number;
@@ -108,6 +109,7 @@ export const getSavedInvoiceImport = async (
     ...data,
     entries,
     ignoredEntryKeys: data.ignoredEntryKeys || [],
+    ignoredSystemEntryKeys: data.ignoredSystemEntryKeys || [],
     totals: data.totals || calculateTotals(entries),
   };
 };
@@ -148,6 +150,7 @@ export const saveInvoiceImport = async ({
     headers,
     entries: sanitizedEntries,
     ignoredEntryKeys: existingImport?.ignoredEntryKeys || [],
+    ignoredSystemEntryKeys: existingImport?.ignoredSystemEntryKeys || [],
     totals: calculateTotals(sanitizedEntries),
   };
 
@@ -158,6 +161,21 @@ export const saveInvoiceImport = async ({
     importedAt: new Date(),
     updatedAt: new Date(),
   };
+};
+
+export const updateIgnoredSystemEntryKeys = async (
+  monthId: string,
+  creditCardId: string,
+  ignoredSystemEntryKeys: string[],
+) => {
+  await setDoc(
+    getInvoiceImportRef(monthId, creditCardId),
+    {
+      ignoredSystemEntryKeys,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
 };
 
 export const updateIgnoredInvoiceEntryKeys = async (
