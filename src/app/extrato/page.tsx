@@ -889,8 +889,8 @@ function ExtratoContent() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-6 py-6">
-      <div className="sticky top-0 z-40 -mx-6 -mt-6 mb-6 flex flex-col gap-4 border-b border-zinc-800/80 bg-black/95 px-6 pb-4 pt-6 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 px-6 pb-6 pt-[148px] text-white sm:pt-[126px]">
+      <div className="fixed left-0 right-0 top-0 z-40 flex flex-col gap-4 border-b border-zinc-700/70 bg-black/75 px-6 pb-4 pt-6 shadow-lg shadow-black/30 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Extrato de cartão</h1>
           <p className="text-zinc-400 text-sm">

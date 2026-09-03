@@ -860,9 +860,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white px-6 py-6">
+    <div className="min-h-screen bg-black px-6 pb-6 pt-[180px] text-white xl:pt-[126px]">
       {/* HEADER */}
-      <div className="sticky top-0 z-40 -mx-6 -mt-6 mb-6 flex flex-col gap-4 border-b border-zinc-800/80 bg-black/95 px-6 pb-4 pt-6 backdrop-blur xl:flex-row xl:items-start xl:justify-between">
+      <div className="fixed left-0 right-0 top-0 z-40 flex flex-col gap-4 border-b border-zinc-700/70 bg-black/75 px-6 pb-4 pt-6 shadow-lg shadow-black/30 backdrop-blur-md xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-zinc-400 text-sm">Controle financeiro</p>
