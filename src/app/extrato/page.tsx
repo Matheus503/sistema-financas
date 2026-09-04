@@ -824,7 +824,19 @@ function ExtratoContent() {
         });
       }
 
-      await loadExtrato();
+      if (anticipateInstallments) {
+        await loadExtrato();
+      } else {
+        setAllItems((prev) =>
+          prev.map((item) =>
+            item.transactionId === editItem.transactionId &&
+            item.monthId === editItem.monthId
+              ? { ...item, value: parsed }
+              : item,
+          ),
+        );
+      }
+
       closeEdit();
       toast.success(
         anticipateInstallments
@@ -866,7 +878,21 @@ function ExtratoContent() {
       await deleteTransaction(itemToDelete.monthId, itemToDelete.transactionId);
     }
 
-    await loadExtrato();
+    if (
+      groupId &&
+      itemToDelete.installmentGroupId &&
+      itemToDelete.installmentCurrent
+    ) {
+      await loadExtrato();
+    } else {
+      setAllItems((prev) =>
+        prev.filter(
+          (item) =>
+            item.transactionId !== itemToDelete.transactionId ||
+            item.monthId !== itemToDelete.monthId,
+        ),
+      );
+    }
 
     setShowDelete(false);
     setItemToDelete(null);
@@ -1447,14 +1473,18 @@ function ExtratoContent() {
         setAccounts={setAccounts}
         setTransactions={setTransactions}
         initialValues={launchInitialValues}
-        onSaved={async () => {
-          await loadExtrato();
+        onSaved={async (targetMonthId) => {
+          if (targetMonthId === activeMonthId) {
+            await loadExtrato();
+          }
         }}
         onMonthsChanged={async (targetMonthId) => {
-          await loadExtrato();
           if (targetMonthId !== activeMonthId && !launchInitialValues) {
             router.push(`/extrato?monthId=${targetMonthId}`);
+            return;
           }
+
+          await loadExtrato();
         }}
       />
     </div>

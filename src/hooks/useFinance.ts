@@ -1,16 +1,31 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
+  type FinanceAccount,
   getAccountsByMonth,
   isCreditCardAccount,
   toggleAccountPaid,
 } from "../services/accountService";
 import { getTransactions } from "../services/transactionService";
 
+type FinanceTransaction = {
+  id: string;
+  accountId?: string;
+  value?: number;
+  date?: string;
+  category?: string;
+  note?: string;
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  launcherId?: string;
+  launcherName?: string;
+};
+
 export function useFinance() {
-  const [accounts, setAccounts] = useState<any[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
+  const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
 
   const loadData = async (monthId: string) => {
     const [accs, trans] = await Promise.all([
@@ -18,11 +33,27 @@ export function useFinance() {
       getTransactions(monthId),
     ]);
 
-    setAccounts(accs);
-    setTransactions(trans);
+    setAccounts(accs as FinanceAccount[]);
+    setTransactions(trans as FinanceTransaction[]);
   };
 
-  const handleTogglePaid = async (monthId: string, acc: any) => {
+  const transactionTotalsByAccount = useMemo(() => {
+    const totals = new Map<string, number>();
+
+    for (const transaction of transactions) {
+      if (!transaction?.accountId) continue;
+
+      const accountId = String(transaction.accountId);
+      totals.set(
+        accountId,
+        (totals.get(accountId) || 0) + Number(transaction.value || 0)
+      );
+    }
+
+    return totals;
+  }, [transactions]);
+
+  const handleTogglePaid = async (monthId: string, acc: FinanceAccount) => {
     await toggleAccountPaid(monthId, acc.id, !!acc.isPaid);
 
     setAccounts((prev) =>
@@ -31,19 +62,17 @@ export function useFinance() {
       )
     );
   };
-const getAccountValue = (acc: any) => {
-  const baseValue = Number(acc?.value || 0);
+  const getAccountValue = useCallback((acc: FinanceAccount) => {
+    const baseValue = Number(acc?.value || 0);
 
-  if (!isCreditCardAccount(acc)) {
-    return baseValue;
-  }
+    if (!isCreditCardAccount(acc)) {
+      return baseValue;
+    }
 
-  const totalTransactions = transactions
-    .filter((t) => t.accountId === acc.id)
-    .reduce((sum, t) => sum + Number(t.value || 0), 0);
+    const totalTransactions = transactionTotalsByAccount.get(String(acc.id)) || 0;
 
-  return baseValue + totalTransactions;
-};
+    return baseValue + totalTransactions;
+  }, [transactionTotalsByAccount]);
 
   const saldo = useMemo(() => {
     const credits = accounts
@@ -55,7 +84,7 @@ const getAccountValue = (acc: any) => {
       .reduce((sum, acc) => sum + getAccountValue(acc), 0);
 
     return credits - expenses;
-  }, [accounts, transactions]);
+  }, [accounts, getAccountValue]);
 
   return {
     accounts,

@@ -28,10 +28,19 @@ export const addTransaction = async (
   monthId: string,
   data: AddTransactionPayload
 ) => {
-  await addDoc(collection(db, "months", monthId, "transactions"), {
+  const payload = {
     ...data,
     createdAt: serverTimestamp(),
-  });
+  };
+  const docRef = await addDoc(
+    collection(db, "months", monthId, "transactions"),
+    payload
+  );
+
+  return {
+    id: docRef.id,
+    ...payload,
+  };
 };
 
 export const getTransactions = async (monthId: string) => {

@@ -613,7 +613,7 @@ export default function DashboardPage() {
     (transaction) => transaction.id === pixEditingId
   );
 
-  const formatTransactionDate = (value: string) => {
+  const formatTransactionDate = (value?: string) => {
     if (!value) return "-";
 
     const [year, month, day] = value.split("-");

@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { auth } from "../lib/auth";
 import {
   addTransaction,
-  getTransactions,
 } from "../services/transactionService";
 
 import {
@@ -44,6 +43,12 @@ type TransactionRecord = {
   accountId?: string;
   value?: number;
   date?: string;
+  category?: string;
+  note?: string;
+  userId?: string;
+  userName?: string;
+  launcherId?: string;
+  launcherName?: string;
 };
 
 type Props = {
@@ -142,6 +147,7 @@ const getInstallmentGroupId = () => {
 
 const CUSTOM_INSTALLMENTS = "custom";
 const MAX_INSTALLMENTS = 60;
+const categoriesCache = new Map<string, FinanceCategory[]>();
 
 const getCreditCardKey = (account: FinanceAccount) =>
   String(account.creditCardKey || account.id || "");
@@ -311,7 +317,6 @@ export default function LaunchModal({
     setCategorySearch("");
     setIsCategorySelectOpen(false);
     setCategoryManageSearch("");
-    setCategoryGroupId("");
     setShowCategoriesModal(false);
     setShowAddCategoryModal(false);
     setNewCategoryName("");
@@ -359,12 +364,23 @@ export default function LaunchModal({
           setCategoryGroupId(profile.groupId);
         }
 
+        const cachedCategories = categoriesCache.get(profile.groupId);
+        if (cachedCategories) {
+          if (isMounted) {
+            setCategories(cachedCategories);
+          }
+
+          return;
+        }
+
         const groupCategories = await seedDefaultCategoriesForGroup(
           profile.groupId,
           {
             preset: getCategorySeedPreset(profile.email),
           },
         );
+
+        categoriesCache.set(profile.groupId, groupCategories);
 
         if (isMounted) {
           setCategories(groupCategories);
@@ -452,6 +468,7 @@ export default function LaunchModal({
       });
 
       setCategories(updatedCategories);
+      categoriesCache.set(categoryGroupId, updatedCategories);
       setCategory(newCategory.name);
       setNewCategoryName("");
       setShowAddCategoryModal(false);
@@ -495,9 +512,15 @@ export default function LaunchModal({
       );
 
       setCategories((prev) =>
-        prev.map((item) =>
-          item.id === editingCategory.id ? { ...item, name: nextName } : item,
-        ),
+        {
+          const updatedCategories = prev.map((item) =>
+            item.id === editingCategory.id ? { ...item, name: nextName } : item,
+          );
+
+          categoriesCache.set(editingCategory.groupId, updatedCategories);
+
+          return updatedCategories;
+        },
       );
 
       if (category === editingCategory.name) {
@@ -524,7 +547,15 @@ export default function LaunchModal({
       await deleteCategory(categoryToDelete.id);
 
       setCategories((prev) =>
-        prev.filter((item) => item.id !== categoryToDelete.id),
+        {
+          const updatedCategories = prev.filter(
+            (item) => item.id !== categoryToDelete.id,
+          );
+
+          categoriesCache.set(categoryToDelete.groupId, updatedCategories);
+
+          return updatedCategories;
+        },
       );
 
       if (category === categoryToDelete.name) {
@@ -790,7 +821,7 @@ export default function LaunchModal({
         const userName =
           auth.currentUser.displayName || auth.currentUser.email || "";
 
-        await addTransaction(firstTargetMonth.id, {
+        const firstTransaction = await addTransaction(firstTargetMonth.id, {
           value: installmentValues[0] / 100,
           accountId: installmentAccount.id,
           category,
@@ -867,9 +898,10 @@ export default function LaunchModal({
           await onMonthsChanged?.(firstTargetMonth.id);
         }
 
-        const trans = (await getTransactions(monthId)) as TransactionRecord[];
+        if (firstTargetMonth.id === monthId) {
+          setTransactions((prev) => [...prev, firstTransaction]);
+        }
 
-        setTransactions(trans);
         await onSaved?.(firstTargetMonth.id);
 
         setValue("");
@@ -993,7 +1025,7 @@ export default function LaunchModal({
         date: launchDate,
       };
 
-      await addTransaction(targetMonthId, payload);
+      const createdTransaction = await addTransaction(targetMonthId, payload);
 
       if (shouldRefreshMonths || targetMonthId !== monthId) {
         await onMonthsChanged?.(targetMonthId);
@@ -1018,9 +1050,9 @@ export default function LaunchModal({
         }
       }
 
-      const trans = (await getTransactions(monthId)) as TransactionRecord[];
-
-      setTransactions(trans);
+      if (targetMonthId === monthId) {
+        setTransactions((prev) => [...prev, createdTransaction]);
+      }
 
       await onSaved?.(targetMonthId);
 
