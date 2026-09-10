@@ -1,6 +1,7 @@
 "use client";
 
 import { groupAccountsByDay } from "../lib/accountSchedule";
+import { isPixAccount } from "../services/accountService";
 import type { FinanceAccount } from "../services/accountService";
 
 type Props = {
@@ -11,9 +12,10 @@ type Props = {
 };
 
 export default function PaymentSchedule({ accounts, getAccountValue, formatMoney, onClose }: Props) {
+  const scheduledAccounts = accounts.filter(account => !isPixAccount(account));
   const sections = [
-    { title: "Créditos por dia", credit: true, groups: groupAccountsByDay(accounts.filter(a => a.type === "CREDIT"), 0) },
-    { title: "Pagamentos · Fixas e variáveis", credit: false, groups: groupAccountsByDay(accounts.filter(a => a.type === "FIXED" || a.type === "VARIABLE")) },
+    { title: "Créditos por dia", credit: true, groups: groupAccountsByDay(scheduledAccounts.filter(a => a.type === "CREDIT"), 0) },
+    { title: "Pagamentos · Fixas e variáveis", credit: false, groups: groupAccountsByDay(scheduledAccounts.filter(a => a.type === "FIXED" || a.type === "VARIABLE")) },
   ];
 
   return (
