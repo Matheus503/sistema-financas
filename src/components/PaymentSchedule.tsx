@@ -16,7 +16,14 @@ export default function PaymentSchedule({ accounts, getAccountValue, formatMoney
   const sections = [
     { title: "Créditos por dia", credit: true, groups: groupAccountsByDay(scheduledAccounts.filter(a => a.type === "CREDIT"), 0) },
     { title: "Pagamentos · Fixas e variáveis", credit: false, groups: groupAccountsByDay(scheduledAccounts.filter(a => a.type === "FIXED" || a.type === "VARIABLE")) },
-  ];
+  ].map(section => ({
+    ...section,
+    groups: section.groups.map(({ day, accounts: group }) => ({
+      day,
+      total: group.reduce((sum, account) => sum + getAccountValue(account), 0),
+      pending: group.filter(account => !account.isPaid).reduce((sum, account) => sum + getAccountValue(account), 0),
+    })).filter(group => Math.round(group.pending * 100) !== 0),
+  }));
 
   return (
     <section id="payment-schedule" className="space-y-4">
@@ -31,11 +38,9 @@ export default function PaymentSchedule({ accounts, getAccountValue, formatMoney
         {sections.map(({ title, credit, groups }) => (
           <div key={title} className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
             <h3 className="mb-4 font-semibold">{title}</h3>
-            {groups.length === 0 && <p className="text-sm text-zinc-400">{credit ? "Nenhum crédito neste mês." : "Nenhuma conta neste mês."}</p>}
+            {groups.length === 0 && <p className="text-sm text-zinc-400">{credit ? "Nenhum crédito pendente de recebimento neste mês." : "Nenhum pagamento pendente neste mês."}</p>}
             <div className="space-y-3">
-              {groups.map(({ day, accounts: group }) => {
-                const total = group.reduce((sum, account) => sum + getAccountValue(account), 0);
-                const pending = group.filter(account => !account.isPaid).reduce((sum, account) => sum + getAccountValue(account), 0);
+              {groups.map(({ day, total, pending }) => {
                 return (
                   <div key={day} className="rounded-xl border border-zinc-700 bg-zinc-800/50 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">

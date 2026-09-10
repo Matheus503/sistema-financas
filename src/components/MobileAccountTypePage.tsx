@@ -35,6 +35,7 @@ import {
 import CreateAccountModal from "./CreateAccountModal";
 import EditAccountModal from "./EditAccountModal";
 import LaunchModal from "./LaunchModal";
+import MobilePaymentSchedule from "./MobilePaymentSchedule";
 import { useModalKeyboardActions } from "../hooks/useModalKeyboardActions";
 
 type Props = {
@@ -89,6 +90,7 @@ export default function MobileAccountTypePage({
   const [showCreate, setShowCreate] = useState(false);
   const [showLaunch, setShowLaunch] = useState(false);
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
+  const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
@@ -672,6 +674,9 @@ export default function MobileAccountTypePage({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 py-6 pb-24 flex flex-col gap-5">
+      {showPaymentSchedule && (
+        <MobilePaymentSchedule accounts={accounts} getAccountValue={getAccountValue} formatMoney={formatMoney} monthLabel={currentMonth ? `${monthName(currentMonth.month)} ${currentMonth.year}` : "Nenhum mês selecionado"} onClose={() => setShowPaymentSchedule(false)} />
+      )}
       {isSideMenuOpen && (
         <div className="fixed inset-0 z-50 flex">
           <button
@@ -696,6 +701,9 @@ export default function MobileAccountTypePage({
             </div>
 
             <nav className="flex flex-col gap-2">
+              <button type="button" onClick={() => { setIsSideMenuOpen(false); setShowPaymentSchedule(true); }} className="w-full rounded-xl bg-zinc-900 px-4 py-3 text-left text-sm font-medium text-zinc-100 border border-zinc-800">
+                Agenda de pagamentos
+              </button>
               {[
                 { label: "Início", href: "/mobile" },
                 { label: "Créditos", href: "/mobile/creditos" },
