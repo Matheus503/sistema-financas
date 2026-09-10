@@ -8,12 +8,12 @@ import {
   isPixAccount,
 } from "../services/accountService";
 import type { FinanceAccount } from "../services/accountService";
+import { getValidDueDay } from "../lib/accountSchedule";
 
 type Props = {
   title: string;
   type: string;
   accounts: FinanceAccount[];
-  totalValue: number;
   getAccountValue: (acc: FinanceAccount) => number;
   formatMoney: (v: number) => string;
   onDelete: (acc: FinanceAccount) => void;
@@ -27,29 +27,10 @@ type Props = {
   onReorder?: (type: string, draggedId: string, targetId: string) => void;
 };
 
-const paymentDays = [4, 10, 15, 19];
-
-const getPaymentDayForDueDay = (dueDay: number) => {
-  const paymentDay = paymentDays
-    .filter((day) => day <= dueDay)
-    .at(-1);
-
-  return paymentDay ?? dueDay;
-};
-
-const getValidDueDay = (account: FinanceAccount) => {
-  const dueDay = Number(account.dia_vencimento);
-
-  return Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31
-    ? dueDay
-    : null;
-};
-
 export default function AccountColumn({
   title,
   type,
   accounts,
-  totalValue,
   getAccountValue,
   formatMoney,
   onDelete,
@@ -85,43 +66,15 @@ export default function AccountColumn({
       .map(({ account }) => account);
   }, [accounts, type]);
 
-  const dueDayTotals = useMemo(() => {
-    const totals = new Map<number, number>();
-
-    columnAccounts.forEach((account) => {
-      const dueDay = getValidDueDay(account);
-      if (dueDay === null) return;
-
-      const paymentDay = getPaymentDayForDueDay(dueDay);
-
-      totals.set(
-        paymentDay,
-        (totals.get(paymentDay) || 0) + getAccountValue(account)
-      );
-    });
-
-    return Array.from(totals.entries()).sort(
-      ([dayA], [dayB]) => dayA - dayB
-    );
-  }, [columnAccounts, getAccountValue]);
-
   return (
     <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800">
       <div className="flex justify-between items-center mb-4">
-        <div>
-          <h2 className="font-semibold">{title}</h2>
-          <div className="flex flex-wrap gap-x-2 text-xs text-zinc-400">
-            <span>Total: {formatMoney(totalValue)}</span>
-            {dueDayTotals.map(([day, value]) => (
-              <span key={day}>| Dia {day}: {formatMoney(value)}</span>
-            ))}
-          </div>
-        </div>
-
+        <h2 className="font-semibold">{title}</h2>
         <button
           onClick={() => onAdd(type)}
           className="bg-purple-600 hover:bg-purple-700 w-7 h-7 rounded-full transition"
           type="button"
+          aria-label={`Adicionar conta — ${title}`}
         >
           +
         </button>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Trash2 } from "lucide-react";
+import { CalendarDays, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { auth } from "../../lib/auth";
 import { createMonth, getAllMonths } from "../../services/monthService";
@@ -33,6 +33,7 @@ import {
 import type { FinanceAccount } from "../../services/accountService";
 
 import AccountColumn from "../../components/AccountColumn";
+import PaymentSchedule from "../../components/PaymentSchedule";
 import LaunchModal from "../../components/LaunchModal";
 import CreateAccountModal from "../../components/CreateAccountModal";
 import EditAccountModal from "../../components/EditAccountModal";
@@ -94,6 +95,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
   const [groupId, setGroupId] = useState("");
   const [showValues, setShowValues] = useState(false);
+  const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
 
   const [months, setMonths] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -196,11 +198,6 @@ export default function DashboardPage() {
       .join("");
   };
 
-  const getTotalByType = (type: string) =>
-    accounts
-      .filter((a) => a.type === type)
-      .reduce((sum, acc) => sum + getAccountValue(acc), 0);
-
   const getExpectedAccountValue = (acc: any) => {
     if (isCreditCardAccount(acc)) {
       return Number(acc.expectedValue || 0);
@@ -214,9 +211,6 @@ export default function DashboardPage() {
       .filter((a) => a.type === type)
       .reduce((sum, acc) => sum + getExpectedAccountValue(acc), 0);
 
-  const totalCredits = getTotalByType("CREDIT");
-  const totalFixed = getTotalByType("FIXED");
-  const totalVariable = getTotalByType("VARIABLE");
   const saldoPrevisto =
     getExpectedTotalByType("CREDIT") -
     accounts
@@ -869,6 +863,16 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowPaymentSchedule(current => !current)}
+            aria-label="Agenda de pagamentos"
+            title="Agenda de pagamentos"
+            aria-pressed={showPaymentSchedule}
+            className={`rounded-xl p-2 transition focus-visible:outline-2 focus-visible:outline-purple-400 ${showPaymentSchedule ? "bg-purple-600 text-white" : "bg-zinc-800 hover:bg-zinc-700"}`}
+          >
+            <CalendarDays size={24} />
+          </button>
           <Link
             href={extratoHref}
             className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl transition"
@@ -1246,12 +1250,14 @@ export default function DashboardPage() {
       </div>
 
       {/* COLUNAS */}
-      <div className="grid grid-cols-3 items-start gap-4">
+      {showPaymentSchedule && (
+        <PaymentSchedule accounts={accounts} getAccountValue={getAccountValue} formatMoney={formatMoney} onClose={() => setShowPaymentSchedule(false)} />
+      )}
+      <div className={showPaymentSchedule ? "hidden" : "grid grid-cols-3 items-start gap-4"}>
         <AccountColumn
           title="Créditos"
           type="CREDIT"
           accounts={accounts}
-          totalValue={totalCredits}
           getAccountValue={getAccountValue}
           formatMoney={formatMoney}
           onDelete={askDelete}
@@ -1263,10 +1269,9 @@ export default function DashboardPage() {
         />
 
         <AccountColumn
-          title="Fixas"
+          title="Contas fixas"
           type="FIXED"
           accounts={accounts}
-          totalValue={totalFixed}
           getAccountValue={getAccountValue}
           formatMoney={formatMoney}
           onDelete={askDelete}
@@ -1278,10 +1283,9 @@ export default function DashboardPage() {
         />
 
         <AccountColumn
-          title="Variáveis"
+          title="Contas variáveis"
           type="VARIABLE"
           accounts={accounts}
-          totalValue={totalVariable}
           getAccountValue={getAccountValue}
           formatMoney={formatMoney}
           onDelete={askDelete}
