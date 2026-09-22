@@ -1,5 +1,11 @@
 "use client";
 
+import SearchSelect from "../../components/SearchSelect";
+
+import MonthSelect from "../../components/MonthSelect";
+
+import { useValueVisibility } from "../../hooks/useValueVisibility";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -43,7 +49,7 @@ import {
 import type { FinanceAccount } from "../../services/accountService";
 
 import LaunchModal from "../../components/LaunchModal";
-import MobilePaymentSchedule from "../../components/MobilePaymentSchedule";
+
 import EditAccountModal from "../../components/EditAccountModal";
 import SwitchControl from "../../components/SwitchControl";
 import { useModalKeyboardActions } from "../../hooks/useModalKeyboardActions";
@@ -53,7 +59,7 @@ const ALL_LAUNCHERS = "all";
 type LauncherFilter = string;
 
 export default function MobileDashboard() {
-  const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
+
   const router = useRouter();
   const fieldLabelClass = "mb-1 block text-xs font-semibold text-zinc-400";
 
@@ -147,8 +153,7 @@ export default function MobileDashboard() {
     setIsDeletingAccount,
   ] = useState(false);
 
-  const [showValues, setShowValues] =
-    useState(false);
+  const [showValues, setShowValues] = useValueVisibility();
   const [
     creditCardSlideIndex,
     setCreditCardSlideIndex,
@@ -238,21 +243,6 @@ export default function MobileDashboard() {
     });
   };
 
-  const monthName = (m: number) =>
-    [
-      "Jan",
-      "Fev",
-      "Mar",
-      "Abr",
-      "Mai",
-      "Jun",
-      "Jul",
-      "Ago",
-      "Set",
-      "Out",
-      "Nov",
-      "Dez",
-    ][m - 1];
 
   const getLauncherName = (
     transaction: any
@@ -812,8 +802,6 @@ export default function MobileDashboard() {
     );
   };
 
-  const currentMonth =
-    months[currentIndex] || null;
 
   // 🔹 cálculo contas
   const getAccountValue = (
@@ -994,9 +982,6 @@ export default function MobileDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 py-6 flex flex-col gap-5">
-      {showPaymentSchedule && (
-        <MobilePaymentSchedule accounts={accounts} getAccountValue={getAccountValue} formatMoney={renderValue} monthLabel={months[currentIndex] ? `${months[currentIndex].month}/${months[currentIndex].year}` : "Nenhum mês selecionado"} onClose={() => setShowPaymentSchedule(false)} />
-      )}
 
       {showAccountMenu &&
         isSideMenuOpen && (
@@ -1042,8 +1027,8 @@ export default function MobileDashboard() {
                   Créditos
                 </button>
 
-                <button type="button" onClick={() => { setIsSideMenuOpen(false); setShowPaymentSchedule(true); }} className="w-full rounded-xl bg-zinc-900 px-4 py-3 text-left text-sm font-medium text-zinc-100 border border-zinc-800">
-                  Agenda de pagamentos
+                <button type="button" onClick={() => { setIsSideMenuOpen(false); router.push(`/mobile/agenda${monthId ? `?month=${encodeURIComponent(monthId)}` : ""}`); }} className="w-full rounded-xl bg-zinc-900 px-4 py-3 text-left text-sm font-medium text-zinc-100 border border-zinc-800">
+                  Agenda financeira
                 </button>
                 {[
                   {
@@ -1145,15 +1130,7 @@ export default function MobileDashboard() {
             ←
           </button>
 
-          <span>
-            {currentMonth
-              ? `${monthName(
-                  currentMonth.month
-                )} ${
-                  currentMonth.year
-                }`
-              : ""}
-          </span>
+          <MonthSelect months={months} currentIndex={currentIndex} onSelect={index => { setCurrentIndex(index); setMonthId(months[index].id); }} />
 
           <button onClick={goNext}>
             →
@@ -1316,8 +1293,7 @@ export default function MobileDashboard() {
             Últimos lançamentos
           </p>
 
-          <select
-            value={launcherFilter}
+          <SearchSelect aria-label="Quem lançou" searchPlaceholder="Buscar quem lançou"             value={launcherFilter}
             onChange={(e) =>
               setLauncherFilter(
                 e.target
@@ -1338,7 +1314,7 @@ export default function MobileDashboard() {
                 {getMemberLabel(member)}
               </option>
             ))}
-          </select>
+          </SearchSelect>
         </div>
 
         {monthTransactions.length ===

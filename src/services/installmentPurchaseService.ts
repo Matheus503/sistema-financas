@@ -41,10 +41,19 @@ const removeUndefined = <T extends Record<string, unknown>>(data: T) =>
 export const createInstallmentPurchase = async (
   data: CreateInstallmentPurchaseData
 ) => {
+  const userId = data.userId || data.launcherId;
+  const userName = data.userName || data.launcherName;
+  const launcherId = data.launcherId || data.userId;
+  const launcherName = data.launcherName || data.userName;
+
   await addDoc(
     collection(db, "installmentPurchases"),
     removeUndefined({
       ...data,
+      userId,
+      userName,
+      launcherId,
+      launcherName,
       isActive: true,
       createdAt: serverTimestamp(),
     })

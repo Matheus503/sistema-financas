@@ -1,7 +1,9 @@
 "use client";
 
+import SearchSelect from "./SearchSelect";
+
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { auth } from "../lib/auth";
 import {
@@ -213,12 +215,8 @@ export default function LaunchModal({
   const [value, setValue] = useState("");
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const [accountSearch, setAccountSearch] = useState("");
-  const [isAccountSelectOpen, setIsAccountSelectOpen] = useState(false);
 
   const [category, setCategory] = useState("");
-  const [categorySearch, setCategorySearch] = useState("");
-  const [isCategorySelectOpen, setIsCategorySelectOpen] = useState(false);
   const [categoryManageSearch, setCategoryManageSearch] = useState("");
 
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
@@ -258,15 +256,6 @@ export default function LaunchModal({
     return accounts.filter((acc) => acc.type === "VARIABLE");
   }, [accounts]);
 
-  const filteredVariableAccounts = useMemo(() => {
-    const search = normalizeSearch(accountSearch);
-
-    if (!search) return variableAccounts;
-
-    return variableAccounts.filter((account) =>
-      normalizeSearch(account.name).includes(search),
-    );
-  }, [accountSearch, variableAccounts]);
 
   const selectedAccount = useMemo(() => {
     return accounts.find((acc) => acc.id === selectedAccountId);
@@ -276,15 +265,6 @@ export default function LaunchModal({
   const isPixSelected = isPixAccount(selectedAccount);
   const fieldLabelClass = "mb-1 block text-xs font-semibold text-zinc-400";
 
-  const filteredCategories = useMemo(() => {
-    const search = normalizeSearch(categorySearch);
-
-    if (!search) return categories;
-
-    return categories.filter((item) =>
-      normalizeSearch(item.name).includes(search),
-    );
-  }, [categories, categorySearch]);
 
   const filteredManagedCategories = useMemo(() => {
     const search = normalizeSearch(categoryManageSearch);
@@ -312,10 +292,6 @@ export default function LaunchModal({
     setCustomInstallments("");
     setDate(initialValues?.date || getTodayDateKey());
     setCategory(initialValues?.category || "");
-    setAccountSearch("");
-    setIsAccountSelectOpen(false);
-    setCategorySearch("");
-    setIsCategorySelectOpen(false);
     setCategoryManageSearch("");
     setShowCategoriesModal(false);
     setShowAddCategoryModal(false);
@@ -407,10 +383,6 @@ export default function LaunchModal({
 
     setValue("");
     setCategory("");
-    setAccountSearch("");
-    setIsAccountSelectOpen(false);
-    setCategorySearch("");
-    setIsCategorySelectOpen(false);
     setCategoryManageSearch("");
     setNote("");
     setInstallments("1");
@@ -572,26 +544,15 @@ export default function LaunchModal({
     }
   };
 
-  const closeCategorySelect = () => {
-    setCategorySearch("");
-    setIsCategorySelectOpen(false);
-  };
 
-  const closeAccountSelect = () => {
-    setAccountSearch("");
-    setIsAccountSelectOpen(false);
-  };
 
   const selectAccount = (nextAccountId: string) => {
     setSelectedAccountId(nextAccountId);
-    closeAccountSelect();
 
     const nextAccount = accounts.find((acc) => acc.id === nextAccountId);
 
     if (!isCreditCardAccount(nextAccount) && !isPixAccount(nextAccount)) {
       setCategory("");
-      setCategorySearch("");
-      setIsCategorySelectOpen(false);
       setInstallments("1");
       setCustomInstallments("");
     }
@@ -599,14 +560,11 @@ export default function LaunchModal({
 
   const selectCategory = (nextCategory: string) => {
     setCategory(nextCategory);
-    closeCategorySelect();
   };
 
   useModalKeyboardActions({
     enabled:
       open &&
-      !isAccountSelectOpen &&
-      !isCategorySelectOpen &&
       !showCategoriesModal &&
       !showAddCategoryModal &&
       !editingCategory &&
@@ -615,15 +573,7 @@ export default function LaunchModal({
     cancelDisabled: isSaving,
   });
 
-  useModalKeyboardActions({
-    enabled: open && isAccountSelectOpen,
-    onCancel: closeAccountSelect,
-  });
 
-  useModalKeyboardActions({
-    enabled: open && isCategorySelectOpen,
-    onCancel: closeCategorySelect,
-  });
 
   useModalKeyboardActions({
     enabled:
@@ -1106,108 +1056,9 @@ export default function LaunchModal({
 
         {/* 🔥 CONTA */}
         <div className="flex items-end gap-2">
-          <div
-            className="relative min-w-0 flex-1"
-            onBlur={(event) => {
-              if (event.currentTarget.contains(event.relatedTarget)) {
-                return;
-              }
-
-              closeAccountSelect();
-            }}
-          >
+          <div className="min-w-0 flex-1">
             <span className={fieldLabelClass}>Conta</span>
-            <button
-              type="button"
-              onClick={() => {
-                if (isSaving) return;
-                closeCategorySelect();
-                setIsAccountSelectOpen((prev) => !prev);
-              }}
-              disabled={isSaving}
-              className="flex w-full items-center justify-between gap-2 rounded bg-zinc-800 p-2 text-left transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
-              aria-expanded={isAccountSelectOpen}
-              aria-haspopup="listbox"
-            >
-              <span
-                className={
-                  selectedAccount
-                    ? "truncate text-zinc-100"
-                    : "truncate text-zinc-400"
-                }
-              >
-                {selectedAccount?.name || "Selecione a conta"}
-              </span>
-              <ChevronDown
-                size={18}
-                className={`shrink-0 transition ${
-                  isAccountSelectOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-
-            {isAccountSelectOpen && (
-              <div className="absolute left-0 right-0 top-full z-[70] mt-2 rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl">
-                <label className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2 text-zinc-400">
-                  <Search size={16} />
-                  <input
-                    value={accountSearch}
-                    onChange={(event) => setAccountSearch(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        closeAccountSelect();
-                        return;
-                      }
-
-                      if (event.key !== "Enter") return;
-
-                      event.preventDefault();
-
-                      const firstAccount = filteredVariableAccounts[0];
-
-                      if (firstAccount) {
-                        selectAccount(firstAccount.id);
-                      }
-                    }}
-                    placeholder="Buscar conta"
-                    autoFocus
-                    className="min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
-                  />
-                </label>
-
-                <div
-                  className="category-scroll max-h-56 overflow-y-auto py-1"
-                  role="listbox"
-                >
-                  {filteredVariableAccounts.length === 0 ? (
-                    <div className="px-3 py-3 text-sm text-zinc-500">
-                      Nenhuma conta encontrada.
-                    </div>
-                  ) : (
-                    filteredVariableAccounts.map((account) => (
-                      <button
-                        key={account.id}
-                        type="button"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => selectAccount(account.id)}
-                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-zinc-100 transition hover:bg-zinc-800"
-                        role="option"
-                        aria-selected={selectedAccountId === account.id}
-                      >
-                        <span className="min-w-0 truncate">{account.name}</span>
-                        {selectedAccountId === account.id && (
-                          <Check
-                            size={16}
-                            className="shrink-0 text-purple-300"
-                          />
-                        )}
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
+            <SearchSelect inputStyle value={selectedAccountId} onValueChange={selectAccount} disabled={isSaving} aria-label="Conta" placeholder="Selecione a conta" searchPlaceholder="Buscar conta" emptyMessage="Nenhuma conta encontrada." className="w-full bg-zinc-800 p-2" options={variableAccounts.map(account => ({ value: account.id, label: account.name }))} />
           </div>
 
           {isCreditCardSelected && (
@@ -1238,7 +1089,10 @@ export default function LaunchModal({
                   autoFocus
                 />
               ) : (
-                <select
+                <SearchSelect
+                  inputStyle
+                  searchable={false}
+                  menuMinWidth={128}
                   value={installments}
                   onChange={(e) => {
                     setInstallments(e.target.value);
@@ -1259,7 +1113,7 @@ export default function LaunchModal({
                     ),
                   )}
                   <option value={CUSTOM_INSTALLMENTS}>Outro</option>
-                </select>
+                </SearchSelect>
               )}
             </label>
           )}
@@ -1268,116 +1122,14 @@ export default function LaunchModal({
         {/* 🔥 CATEGORIA */}
         {(isCreditCardSelected || isPixSelected) && (
           <div className="flex items-end gap-2">
-            <div
-              className="relative min-w-0 flex-1"
-              onBlur={(event) => {
-                if (event.currentTarget.contains(event.relatedTarget)) {
-                  return;
-                }
-
-                closeCategorySelect();
-              }}
-            >
+            <div className="min-w-0 flex-1">
               <span className={fieldLabelClass}>Categoria</span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (isSaving) return;
-                  closeAccountSelect();
-                  setIsCategorySelectOpen((prev) => !prev);
-                }}
-                disabled={isSaving}
-                className="flex w-full items-center justify-between gap-2 rounded bg-zinc-800 p-2 text-left transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-expanded={isCategorySelectOpen}
-                aria-haspopup="listbox"
-              >
-                <span
-                  className={
-                    category
-                      ? "truncate text-zinc-100"
-                      : "truncate text-zinc-400"
-                  }
-                >
-                  {category || "Selecione a categoria"}
-                </span>
-                <ChevronDown
-                  size={18}
-                  className={`shrink-0 transition ${
-                    isCategorySelectOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-
-              {isCategorySelectOpen && (
-                <div className="absolute left-0 right-0 top-full z-[65] mt-2 rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl">
-                  <label className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2 text-zinc-400">
-                    <Search size={16} />
-                    <input
-                      value={categorySearch}
-                      onChange={(event) =>
-                        setCategorySearch(event.target.value)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          closeCategorySelect();
-                          return;
-                        }
-
-                        if (event.key !== "Enter") return;
-
-                        event.preventDefault();
-
-                        const firstCategory = filteredCategories[0];
-
-                        if (firstCategory) {
-                          selectCategory(firstCategory.name);
-                        }
-                      }}
-                      placeholder="Buscar categoria"
-                      autoFocus
-                      className="min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
-                    />
-                  </label>
-
-                  <div
-                    className="category-scroll max-h-56 overflow-y-auto py-1"
-                    role="listbox"
-                  >
-                    {filteredCategories.length === 0 ? (
-                      <div className="px-3 py-3 text-sm text-zinc-500">
-                        Nenhuma categoria encontrada.
-                      </div>
-                    ) : (
-                      filteredCategories.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => selectCategory(item.name)}
-                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-zinc-100 transition hover:bg-zinc-800"
-                          role="option"
-                          aria-selected={category === item.name}
-                        >
-                          <span className="min-w-0 truncate">{item.name}</span>
-                          {category === item.name && (
-                            <Check
-                              size={16}
-                              className="shrink-0 text-purple-300"
-                            />
-                          )}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
+              <SearchSelect inputStyle value={category} onValueChange={selectCategory} disabled={isSaving} aria-label="Categoria" placeholder="Selecione a categoria" searchPlaceholder="Buscar categoria" emptyMessage="Nenhuma categoria encontrada." className="w-full bg-zinc-800 p-2" options={categories.map(item => ({ value: item.name, label: item.name }))} />
             </div>
 
             <button
               type="button"
               onClick={() => {
-                closeCategorySelect();
                 setShowCategoriesModal(true);
               }}
               disabled={isSaving}

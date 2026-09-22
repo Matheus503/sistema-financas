@@ -1,5 +1,6 @@
 "use client";
 
+
 import { groupAccountsByDay } from "../lib/accountSchedule";
 import { isPixAccount } from "../services/accountService";
 import type { FinanceAccount } from "../services/accountService";
@@ -9,9 +10,11 @@ type Props = {
   getAccountValue: (account: FinanceAccount) => number;
   formatMoney: (value: number) => string;
   onClose: () => void;
+  showTitle?: boolean;
+  showBackButton?: boolean;
 };
 
-export default function PaymentSchedule({ accounts, getAccountValue, formatMoney, onClose }: Props) {
+export default function PaymentSchedule({ accounts, getAccountValue, formatMoney, onClose, showTitle = true, showBackButton = true }: Props) {
   const scheduledAccounts = accounts.filter(account => !isPixAccount(account));
   const sections = [
     { title: "Créditos por dia", credit: true, groups: groupAccountsByDay(scheduledAccounts.filter(a => a.type === "CREDIT"), 0) },
@@ -27,17 +30,19 @@ export default function PaymentSchedule({ accounts, getAccountValue, formatMoney
 
   return (
     <section id="payment-schedule" className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">Agenda de pagamentos</h2>
-          <p className="text-sm text-zinc-400">Mês selecionado · Créditos na data de recebimento; pagamentos agrupados até 3 dias após o primeiro vencimento.</p>
-        </div>
-        <button type="button" onClick={onClose} className="rounded-xl bg-zinc-800 px-4 py-2 hover:bg-zinc-700">Voltar às contas</button>
-      </div>
+      {(showTitle || showBackButton) && <div className="flex flex-wrap items-center justify-between gap-3">
+        {showTitle && <div>
+          <h2 className="text-xl font-semibold">Agenda financeira</h2>
+        </div>}
+        {showBackButton && <button type="button" onClick={onClose} className="rounded-xl bg-zinc-800 px-4 py-2 hover:bg-zinc-700">Voltar às contas</button>}
+      </div>}
       <div className="grid gap-4 md:grid-cols-2">
         {sections.map(({ title, credit, groups }) => (
           <div key={title} className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <h3 className="mb-4 font-semibold">{title}</h3>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h3 className="font-semibold">{title}</h3>
+
+            </div>
             {groups.length === 0 && <p className="text-sm text-zinc-400">{credit ? "Nenhum crédito pendente de recebimento neste mês." : "Nenhum pagamento pendente neste mês."}</p>}
             <div className="space-y-3">
               {groups.map(({ day, total, pending }) => {

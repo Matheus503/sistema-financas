@@ -1,5 +1,7 @@
 "use client";
 
+import SearchSelect from "../../components/SearchSelect";
+
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
@@ -1145,8 +1147,7 @@ function ExtratoContent() {
             <label className="block text-xs text-zinc-400 mb-2">
               Categoria
             </label>
-            <select
-              value={filterCategory}
+            <SearchSelect aria-label="Categoria" searchPlaceholder="Buscar categoria"               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
               className="w-full bg-zinc-800 p-2 rounded-lg outline-none"
             >
@@ -1156,15 +1157,14 @@ function ExtratoContent() {
                   {cat}
                 </option>
               ))}
-            </select>
+            </SearchSelect>
           </div>
 
           <div>
             <label className="block text-xs text-zinc-400 mb-2">
               Quem lançou
             </label>
-            <select
-              value={filterLauncher}
+            <SearchSelect aria-label="Quem lançou" searchPlaceholder="Buscar quem lançou"               value={filterLauncher}
               onChange={(e) => setFilterLauncher(e.target.value)}
               className="w-full bg-zinc-800 p-2 rounded-lg outline-none"
             >
@@ -1174,15 +1174,14 @@ function ExtratoContent() {
                 </option>
               ))}
               <option value={ALL_LAUNCHERS}>Todos os Lancamentos</option>
-            </select>
+            </SearchSelect>
           </div>
 
           <div>
             <label className="block text-xs text-zinc-400 mb-2">
               Cartão de crédito
             </label>
-            <select
-              value={filterCreditCard}
+            <SearchSelect aria-label="Cartão de crédito" searchPlaceholder="Buscar cartão de crédito"               value={filterCreditCard}
               onChange={(e) => setFilterCreditCard(e.target.value)}
               className="w-full bg-zinc-800 p-2 rounded-lg outline-none"
             >
@@ -1192,7 +1191,7 @@ function ExtratoContent() {
                   {card.name}
                 </option>
               ))}
-            </select>
+            </SearchSelect>
           </div>
 
           <button

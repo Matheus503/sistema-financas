@@ -1,5 +1,9 @@
 "use client";
 
+import SearchSelect from "../../components/SearchSelect";
+
+import { useValueVisibility } from "../../hooks/useValueVisibility";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -32,6 +36,7 @@ import {
 } from "../../services/accountService";
 import type { FinanceAccount } from "../../services/accountService";
 
+import MonthSelect from "../../components/MonthSelect";
 import AccountColumn from "../../components/AccountColumn";
 import PaymentSchedule from "../../components/PaymentSchedule";
 import LaunchModal from "../../components/LaunchModal";
@@ -94,7 +99,7 @@ export default function DashboardPage() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [groupId, setGroupId] = useState("");
-  const [showValues, setShowValues] = useState(false);
+  const [showValues, setShowValues] = useValueVisibility();
   const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
 
   const [months, setMonths] = useState<any[]>([]);
@@ -866,8 +871,8 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => setShowPaymentSchedule(current => !current)}
-            aria-label="Agenda de pagamentos"
-            title="Agenda de pagamentos"
+            aria-label="Agenda financeira"
+            title="Agenda financeira"
             aria-pressed={showPaymentSchedule}
             className={`rounded-xl p-2 transition focus-visible:outline-2 focus-visible:outline-purple-400 ${showPaymentSchedule ? "bg-purple-600 text-white" : "bg-zinc-800 hover:bg-zinc-700"}`}
           >
@@ -905,9 +910,7 @@ export default function DashboardPage() {
               ←
             </button>
 
-            <span className="px-4 text-sm font-semibold text-zinc-300 min-w-[72px] text-center">
-              {months[currentIndex]?.month}/{months[currentIndex]?.year}
-            </span>
+            <MonthSelect months={months} currentIndex={currentIndex} onSelect={index => { void loadMonth(index); }} />
 
             <button
               onClick={() =>
@@ -1493,8 +1496,7 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <select
-                  value={pixLauncherFilter}
+                <SearchSelect aria-label="Quem lançou" searchPlaceholder="Buscar quem lançou"                   value={pixLauncherFilter}
                   onChange={(event) =>
                     setPixLauncherFilter(event.target.value as LauncherFilter)
                   }
@@ -1506,7 +1508,7 @@ export default function DashboardPage() {
                       {getMemberLabel(member)}
                     </option>
                   ))}
-                </select>
+                </SearchSelect>
 
                 <button
                   onClick={closePixHistory}

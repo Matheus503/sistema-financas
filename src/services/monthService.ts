@@ -265,16 +265,20 @@ const createScheduledInstallmentTransactions = async (
     const note = rawNote
       ? `${rawNote} (${installmentCurrent}/${totalPurchaseInstallments})`
       : `Parcela ${installmentCurrent}/${totalPurchaseInstallments}`;
+    const userId = String(data.userId || data.launcherId || "");
+    const userName = String(data.userName || data.launcherName || "");
+    const launcherId = String(data.launcherId || data.userId || "");
+    const launcherName = String(data.launcherName || data.userName || "");
 
     await addDoc(collection(db, "months", monthId, "transactions"), {
       value: installmentValueCents / 100,
       accountId: targetAccount.id,
       category: String(data.category || ""),
       note,
-      userId: String(data.userId || ""),
-      userName: String(data.userName || ""),
-      launcherId: String(data.launcherId || ""),
-      launcherName: String(data.launcherName || ""),
+      userId,
+      userName,
+      launcherId,
+      launcherName,
       date: String(data.purchaseDate || ""),
       installmentGroupId: String(data.installmentGroupId || purchaseDoc.id),
       installmentCurrent,

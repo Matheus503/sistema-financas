@@ -66,10 +66,24 @@ export default function AccountColumn({
       .map(({ account }) => account);
   }, [accounts, type]);
 
+  const columnTotal = useMemo(
+    () =>
+      columnAccounts.reduce(
+        (total, account) => total + getAccountValue(account),
+        0,
+      ),
+    [columnAccounts, getAccountValue],
+  );
+
   return (
     <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="font-semibold">{title}</h2>
+        <div className="min-w-0">
+          <h2 className="font-semibold">{title}</h2>
+          <p className="mt-0.5 text-sm font-semibold text-zinc-300">
+            Total: {formatMoney(columnTotal)}
+          </p>
+        </div>
         <button
           onClick={() => onAdd(type)}
           className="bg-purple-600 hover:bg-purple-700 w-7 h-7 rounded-full transition"

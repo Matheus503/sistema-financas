@@ -1,5 +1,11 @@
 "use client";
 
+import SearchSelect from "./SearchSelect";
+
+import MonthSelect from "./MonthSelect";
+
+import { useValueVisibility } from "../hooks/useValueVisibility";
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Menu, Plus, Trash2, X } from "lucide-react";
@@ -35,10 +41,11 @@ import {
 import CreateAccountModal from "./CreateAccountModal";
 import EditAccountModal from "./EditAccountModal";
 import LaunchModal from "./LaunchModal";
-import MobilePaymentSchedule from "./MobilePaymentSchedule";
+import PaymentSchedule from "./PaymentSchedule";
 import { useModalKeyboardActions } from "../hooks/useModalKeyboardActions";
 
 type Props = {
+  agenda?: boolean;
   accountType: "CREDIT" | "FIXED" | "VARIABLE";
   title: string;
   totalLabel: string;
@@ -51,23 +58,9 @@ const ALL_LAUNCHERS = "all";
 
 type LauncherFilter = string;
 
-const monthName = (month: number) =>
-  [
-    "Jan",
-    "Fev",
-    "Mar",
-    "Abr",
-    "Mai",
-    "Jun",
-    "Jul",
-    "Ago",
-    "Set",
-    "Out",
-    "Nov",
-    "Dez",
-  ][month - 1];
 
 export default function MobileAccountTypePage({
+  agenda = false,
   accountType,
   title,
   totalLabel,
@@ -86,11 +79,11 @@ export default function MobileAccountTypePage({
   const [accounts, setAccounts] = useState<FinanceAccount[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [members, setMembers] = useState<GroupMemberListItem[]>([]);
-  const [showValues, setShowValues] = useState(true);
+  const [showValues, setShowValues] = useValueVisibility();
   const [showCreate, setShowCreate] = useState(false);
   const [showLaunch, setShowLaunch] = useState(false);
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
-  const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
+
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
@@ -327,7 +320,9 @@ export default function MobileAccountTypePage({
         return;
       }
 
-      const lastIndex = all.length - 1;
+      const requestedMonth = new URLSearchParams(window.location.search).get("month");
+      const requestedIndex = all.findIndex(month => month.id === requestedMonth);
+      const lastIndex = requestedIndex >= 0 ? requestedIndex : all.length - 1;
       setMonths(all);
       setCurrentIndex(lastIndex);
       setMonthId(all[lastIndex].id);
@@ -337,7 +332,6 @@ export default function MobileAccountTypePage({
     load();
   }, [router]);
 
-  const currentMonth = months[currentIndex] || null;
 
   const getAccountValue = (account: FinanceAccount) => {
     const baseValue = Number(account.value || 0);
@@ -674,9 +668,6 @@ export default function MobileAccountTypePage({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 py-6 pb-24 flex flex-col gap-5">
-      {showPaymentSchedule && (
-        <MobilePaymentSchedule accounts={accounts} getAccountValue={getAccountValue} formatMoney={formatMoney} monthLabel={currentMonth ? `${monthName(currentMonth.month)} ${currentMonth.year}` : "Nenhum mês selecionado"} onClose={() => setShowPaymentSchedule(false)} />
-      )}
       {isSideMenuOpen && (
         <div className="fixed inset-0 z-50 flex">
           <button
@@ -701,8 +692,8 @@ export default function MobileAccountTypePage({
             </div>
 
             <nav className="flex flex-col gap-2">
-              <button type="button" onClick={() => { setIsSideMenuOpen(false); setShowPaymentSchedule(true); }} className="w-full rounded-xl bg-zinc-900 px-4 py-3 text-left text-sm font-medium text-zinc-100 border border-zinc-800">
-                Agenda de pagamentos
+              <button type="button" onClick={() => { setIsSideMenuOpen(false); router.push(`/mobile/agenda${monthId ? `?month=${encodeURIComponent(monthId)}` : ""}`); }} className="w-full rounded-xl bg-zinc-900 px-4 py-3 text-left text-sm font-medium text-zinc-100 border border-zinc-800">
+                Agenda financeira
               </button>
               {[
                 { label: "Início", href: "/mobile" },
@@ -727,6 +718,7 @@ export default function MobileAccountTypePage({
         </div>
       )}
 
+      <div className={agenda ? "sticky top-0 z-40 -mx-4 -mt-6 border-b border-zinc-700/70 bg-black/75 px-4 py-5 shadow-lg shadow-black/30 backdrop-blur-md" : ""}>
       <div className="relative flex items-center justify-center">
         <button
           onClick={() => setIsSideMenuOpen(true)}
@@ -742,11 +734,7 @@ export default function MobileAccountTypePage({
             ←
           </button>
 
-          <span>
-            {currentMonth
-              ? `${monthName(currentMonth.month)} ${currentMonth.year}`
-              : ""}
-          </span>
+          <MonthSelect months={months} currentIndex={currentIndex} onSelect={async index => { setCurrentIndex(index); setMonthId(months[index].id); await loadData(months[index].id); }} />
 
           <button onClick={goNext} type="button">
             →
@@ -802,6 +790,8 @@ export default function MobileAccountTypePage({
             </div>
           )}
         </div>
+      </div>
+
       </div>
 
       {showMoreOptionsModal && (
@@ -874,6 +864,9 @@ export default function MobileAccountTypePage({
         </div>
       )}
 
+      {agenda ? (
+        <PaymentSchedule accounts={accounts} getAccountValue={getAccountValue} formatMoney={formatMoney} onClose={() => router.push("/mobile")} showTitle={false} showBackButton={false} />
+      ) : (<>
       <div className="bg-purple-600 px-4 py-3 rounded-2xl">
         <div className="flex justify-between items-center">
           <p className="text-sm opacity-80">{totalLabel}</p>
@@ -969,6 +962,20 @@ export default function MobileAccountTypePage({
         </div>
       </div>
 
+      </>)}
+
+      {agenda && (
+        <button
+          type="button"
+          onClick={() => setShowValues(current => !current)}
+          aria-label={showValues ? "Ocultar todos os valores" : "Mostrar todos os valores"}
+          title={showValues ? "Ocultar todos os valores" : "Mostrar todos os valores"}
+          className="fixed bottom-6 left-6 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/90 text-white shadow-lg backdrop-blur-md transition hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-400"
+        >
+          {showValues ? <EyeOff size={22} /> : <Eye size={22} />}
+        </button>
+      )}
+
       <button
         className="fixed bottom-6 right-6 z-40 bg-purple-600 w-16 h-16 rounded-full text-3xl shadow-lg"
         onClick={() => setShowLaunch(true)}
@@ -990,7 +997,7 @@ export default function MobileAccountTypePage({
               </div>
 
               <div className="flex items-center gap-2">
-                <select
+                <SearchSelect aria-label="Quem lançou" searchPlaceholder="Buscar quem lançou"
                   value={pixLauncherFilter}
                   onChange={(event) =>
                     setPixLauncherFilter(event.target.value as LauncherFilter)
@@ -1003,7 +1010,7 @@ export default function MobileAccountTypePage({
                       {getMemberLabel(member)}
                     </option>
                   ))}
-                </select>
+                </SearchSelect>
 
                 <button
                   onClick={closePixHistory}

@@ -1,5 +1,8 @@
 "use client";
 
+import YearRangeSelect from "../../components/YearRangeSelect";
+import SearchSelect from "../../components/SearchSelect";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
@@ -51,6 +54,7 @@ export default function ExtratoTotalPage() {
 
   const [months, setMonths] = useState<MonthDoc[]>([]);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [endYear, setEndYear] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [launcherFilter, setLauncherFilter] =
     useState<LauncherFilter>(ALL_LAUNCHERS);
@@ -118,6 +122,7 @@ export default function ExtratoTotalPage() {
       if (data.length) {
         const last = data[data.length - 1];
         setSelectedYear(Number(last.year));
+        setEndYear(Number(last.year));
       } else {
         setLoading(false);
       }
@@ -127,8 +132,9 @@ export default function ExtratoTotalPage() {
   }, [router]);
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
-      if (!selectedYear) return;
+      if (!selectedYear || !endYear) return;
 
       const user = auth.currentUser;
       if (!user) return router.push("/");
@@ -136,7 +142,7 @@ export default function ExtratoTotalPage() {
       setLoading(true);
 
       let targetMonths = months.filter(
-        (m) => Number(m.year) === selectedYear
+        (m) => Number(m.year) >= selectedYear && Number(m.year) <= endYear
       );
 
       if (selectedMonth) {
@@ -151,19 +157,21 @@ export default function ExtratoTotalPage() {
 
           return trans.map((t: any) => ({
             ...t,
-            month: m.month,
+            month: Number(m.month),
           }));
         })
       );
 
       const all = transactionsByMonth.flat();
 
+      if (cancelled) return;
       setTransactions(all);
       setLoading(false);
     };
 
     load();
-  }, [selectedYear, selectedMonth, months, router]);
+    return () => { cancelled = true; };
+  }, [selectedYear, endYear, selectedMonth, months, router]);
 
   const filteredTransactions = useMemo(() => {
     if (launcherFilter === ALL_LAUNCHERS) return transactions;
@@ -210,11 +218,10 @@ export default function ExtratoTotalPage() {
   }, [filteredTransactions]);
 
   const monthsOfYear = useMemo(() => {
-    return months
-      .filter((m) => Number(m.year) === selectedYear)
-      .map((m) => m.month)
-      .sort((a, b) => a - b);
-  }, [months, selectedYear]);
+    return [...new Set(months
+      .filter((m) => selectedYear !== null && endYear !== null && Number(m.year) >= selectedYear && Number(m.year) <= endYear)
+      .map((m) => Number(m.month)))].sort((a, b) => a - b);
+  }, [months, selectedYear, endYear]);
 
   const totalGeral = filteredTransactions.reduce(
     (sum, t) => sum + Number(t.value || 0),
@@ -252,7 +259,7 @@ export default function ExtratoTotalPage() {
     };
   });
 
-  const years = [...new Set(months.map((m) => Number(m.year)))];
+  const years = [...new Set(months.map((m) => Number(m.year)))].sort((a, b) => a - b);
 
   const monthName = (m: number) =>
     [
@@ -264,65 +271,64 @@ export default function ExtratoTotalPage() {
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-6 py-6">
 
       {/* HEADER */}
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <h1 className="text-2xl font-bold whitespace-nowrap">
-            Extrato Total
-          </h1>
-
-          <select
-            value={selectedYear ?? ""}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="bg-zinc-800 px-4 py-2 rounded-lg outline-none border border-zinc-700"
-          >
-            {years.map((y) => (
-              <option key={y}>{y}</option>
-            ))}
-          </select>
-
-          <select
-            value={selectedMonth ?? ""}
-            onChange={(e) =>
-              setSelectedMonth(
-                e.target.value ? Number(e.target.value) : null
-              )
-            }
-            className="bg-zinc-800 px-4 py-2 rounded-lg outline-none border border-zinc-700"
-          >
-            <option value="">Todos</option>
-            {monthsOfYear.map((m) => (
-              <option key={m} value={m}>
-                {String(m).padStart(2, "0")}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={launcherFilter}
-            onChange={(e) =>
-              setLauncherFilter(e.target.value as LauncherFilter)
-            }
-            className="bg-zinc-800 px-4 py-2 rounded-lg outline-none border border-zinc-700"
-          >
-            <option value={ALL_LAUNCHERS}>Todos</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {getMemberLabel(member)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl transition"
-          type="button"
-        >
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold">Extrato Total</h1>
+        <button onClick={() => router.push("/dashboard")} className="rounded-xl bg-zinc-800 px-4 py-2 transition hover:bg-zinc-700" type="button">
           Voltar
         </button>
       </div>
 
+      <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
+        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]">
+          <YearRangeSelect years={years} start={selectedYear} end={endYear} onChange={(first, last) => {
+            setSelectedYear(first);
+            setEndYear(last);
+            setSelectedMonth(null);
+          }} />
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className="text-xs text-zinc-400">Mês</span>
+            <SearchSelect aria-label="Mês" searchPlaceholder="Buscar mês"
+              value={selectedMonth ?? ""}
+              onChange={event => setSelectedMonth(event.target.value ? Number(event.target.value) : null)}
+              className="min-h-11 w-full bg-zinc-800 px-3 py-2 text-sm"
+            >
+              <option value="">Todos os meses</option>
+              {monthsOfYear.map(month => <option key={month} value={month}>{monthName(month)}</option>)}
+            </SearchSelect>
+          </label>
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className="text-xs text-zinc-400">Quem lançou</span>
+            <SearchSelect aria-label="Quem lançou" searchPlaceholder="Buscar pessoa"
+              value={launcherFilter}
+              onChange={event => setLauncherFilter(event.target.value as LauncherFilter)}
+              className="min-h-11 w-full bg-zinc-800 px-3 py-2 text-sm"
+            >
+              <option value={ALL_LAUNCHERS}>Todas as pessoas</option>
+              {members.map(member => <option key={member.id} value={member.id}>{getMemberLabel(member)}</option>)}
+            </SearchSelect>
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedYear(years.length ? Math.max(...years) : null);
+              setEndYear(years.length ? Math.max(...years) : null);
+              setSelectedMonth(null);
+              setLauncherFilter(ALL_LAUNCHERS);
+            }}
+            className="min-h-11 rounded-xl bg-zinc-700 px-4 py-2 text-sm transition hover:bg-zinc-600 focus-visible:outline-2 focus-visible:outline-purple-400 sm:col-span-2 lg:col-span-1"
+          >
+            Limpar filtros
+          </button>
+        </div>
+      </div>
+
       {/* TABELA */}
+      {selectedYear !== null && endYear !== null && (
+        <p className="mb-3 text-sm text-zinc-400">
+          {selectedYear === endYear ? `Gastos de ${selectedYear}` : `Gastos de ${selectedYear} a ${endYear} · Valores somados por mês`}
+        </p>
+      )}
+      {loading && <p role="status" className="mb-3 text-sm text-zinc-400">Carregando período...</p>}
       <div className="bg-zinc-900/70 rounded-2xl overflow-auto border border-zinc-800 shadow-2xl shadow-black/20">
         <table className="w-full text-sm">
           <thead className="bg-zinc-800/90 text-zinc-200">
