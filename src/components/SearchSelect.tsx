@@ -65,11 +65,14 @@ export default function SearchSelect({ value, options, children, onValueChange, 
       const above = rect.top - viewportTop - 16;
       const upwards = below < 200 && above > below;
       const maxHeight = Math.max(80, Math.min(288, upwards ? above : below));
-      setPosition({ left: Math.max(viewportLeft + 12, Math.min(rect.left + (rect.width - width) / 2, viewportLeft + viewportWidth - width - 12)), top: upwards ? rect.top - 8 : rect.bottom + 8, width, maxHeight, transform: upwards ? "translateY(-100%)" : "none" });
+      // The portal uses document coordinates, so keyboard-driven viewport
+      // panning does not detach it from its trigger on mobile Safari.
+      setPosition({ left: window.scrollX + Math.max(viewportLeft + 12, Math.min(rect.left + (rect.width - width) / 2, viewportLeft + viewportWidth - width - 12)), top: window.scrollY + (upwards ? rect.top - 8 : rect.bottom + 8), width, maxHeight, transform: upwards ? "translateY(-100%)" : "none" });
     };
     updatePosition();
-    if (searchable) inputRef.current?.focus({ preventScroll: true });
-    else {
+    const touchDevice = window.matchMedia("(any-pointer: coarse)").matches;
+    if (searchable && !touchDevice) inputRef.current?.focus({ preventScroll: true });
+    else if (!searchable && !touchDevice) {
       const option = panelRef.current?.querySelector<HTMLButtonElement>('button[aria-current="true"]:not(:disabled)') ?? panelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)');
       option?.focus({ preventScroll: true });
       option?.scrollIntoView({ block: "nearest" });
@@ -77,19 +80,28 @@ export default function SearchSelect({ value, options, children, onValueChange, 
     const dismiss = (event: PointerEvent) => {
       if (!panelRef.current?.contains(event.target as Node) && !triggerRef.current?.contains(event.target as Node)) setOpen(false);
     };
+    // Safari may blur an input with relatedTarget=null before a tapped
+    // option receives its click. Only dismiss on actual outside interaction.
+    const dismissOnFocus = (event: FocusEvent) => {
+      if (!panelRef.current?.contains(event.target as Node) && !triggerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
     document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("focusin", dismissOnFocus);
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
     window.visualViewport?.addEventListener("resize", updatePosition);
+    window.visualViewport?.addEventListener("scroll", updatePosition);
     return () => {
       document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("focusin", dismissOnFocus);
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
       window.visualViewport?.removeEventListener("resize", updatePosition);
+      window.visualViewport?.removeEventListener("scroll", updatePosition);
     };
   }, [open, compact, searchable, menuMinWidth]);
 
-  const close = () => { setOpen(false); triggerRef.current?.focus(); };
+  const close = () => { setOpen(false); triggerRef.current?.focus({ preventScroll: true }); };
   const choose = (option: SelectOption) => {
     if (option.disabled) return;
     close();
@@ -105,8 +117,7 @@ export default function SearchSelect({ value, options, children, onValueChange, 
     ><span className={"truncate " + (inputStyle && !selected ? "text-current/50" : "")}>{selected?.label ?? placeholder}</span></button>
     {open && createPortal(
       <div ref={panelRef} id={menuId} aria-label={label} style={position}
-        className="fixed z-[200] flex flex-col overflow-hidden rounded-2xl border border-zinc-700/70 bg-zinc-900 p-1.5 text-white shadow-xl shadow-black/50"
-        onBlur={event => { if (!panelRef.current?.contains(event.relatedTarget as Node) && event.relatedTarget !== triggerRef.current) setOpen(false); }}
+        className="absolute z-[200] flex flex-col overflow-hidden rounded-2xl border border-zinc-700/70 bg-zinc-900 p-1.5 text-white shadow-xl shadow-black/50"
         onKeyDown={event => {
           event.stopPropagation();
           if (event.key === "Escape") { event.preventDefault(); close(); return; }
@@ -125,11 +136,11 @@ export default function SearchSelect({ value, options, children, onValueChange, 
       >
         {searchable && <label className="mb-1.5 flex shrink-0 items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800 px-2 focus-within:border-purple-400">
           <Search size={14} className="shrink-0 text-zinc-500" aria-hidden="true" />
-          <input ref={inputRef} type="text" value={search} onChange={event => setSearch(event.target.value)} aria-label={searchPlaceholder} placeholder={searchPlaceholder} className="h-10 w-full min-w-0 bg-transparent text-sm text-zinc-200 outline-none placeholder:text-zinc-500" />
+          <input ref={inputRef} type="text" value={search} onChange={event => setSearch(event.target.value)} aria-label={searchPlaceholder} placeholder={searchPlaceholder} className="h-10 w-full min-w-0 bg-transparent text-base text-zinc-200 outline-none placeholder:text-zinc-500" />
         </label>}
         <div className="category-scroll min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges]">
           {filtered.length === 0 && <p role="status" className="px-2 py-4 text-center text-xs text-zinc-400">{emptyMessage}</p>}
-          {filtered.map(option => <button key={option.value} type="button" disabled={option.disabled} aria-current={option.value === String(value ?? "") ? "true" : undefined} onClick={() => choose(option)}
+          {filtered.map(option => <button key={option.value} type="button" disabled={option.disabled} aria-current={option.value === String(value ?? "") ? "true" : undefined} onMouseDown={event => event.preventDefault()} onClick={() => choose(option)}
             className={"grid min-h-11 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-1 rounded-xl px-2 py-2 text-sm transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-purple-400 disabled:opacity-40 " + (option.value === String(value ?? "") ? "bg-purple-500/20 font-semibold text-purple-200" : "text-zinc-300 hover:bg-zinc-800 hover:text-white")}
           ><span aria-hidden="true" /><span className="break-words text-center">{option.label}</span><span aria-hidden="true">{option.value === String(value ?? "") && <Check size={16} />}</span></button>)}
         </div>
