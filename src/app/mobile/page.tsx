@@ -1,5 +1,7 @@
 "use client";
 
+import AppHeader from "../../components/AppHeader";
+
 import SearchSelect from "../../components/SearchSelect";
 
 import MonthSelect from "../../components/MonthSelect";
@@ -981,7 +983,7 @@ export default function MobileDashboard() {
     );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 py-6 flex flex-col gap-5">
+    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 pb-6 flex flex-col gap-5">
 
       {showAccountMenu &&
         isSideMenuOpen && (
@@ -1039,6 +1041,10 @@ export default function MobileDashboard() {
                     label: "Contas Variáveis",
                     href: "/mobile/variaveis",
                   },
+                  {
+                    label: "Relatório mensal",
+                    href: "/relatorio-mensal",
+                  },
                 ].map((item) => (
                   <button
                     key={item.href}
@@ -1058,7 +1064,7 @@ export default function MobileDashboard() {
         )}
 
       {/* HEADER */}
-      <div className="relative flex items-center justify-center">
+      <AppHeader className=""><div className="relative flex items-center justify-center">
         {showAccountMenu && (
           <button
             onClick={() =>
@@ -1137,7 +1143,7 @@ export default function MobileDashboard() {
           </button>
 
         </div>
-      </div>
+      </div></AppHeader>
 
       {showMoreOptionsModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">

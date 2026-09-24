@@ -1,5 +1,7 @@
 "use client";
 
+import AppHeader from "./AppHeader";
+
 import SearchSelect from "./SearchSelect";
 
 import MonthSelect from "./MonthSelect";
@@ -667,7 +669,7 @@ export default function MobileAccountTypePage({
     isInstallmentAccount(accountToDelete);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 py-6 pb-24 flex flex-col gap-5">
+    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 pb-24 flex flex-col gap-5">
       {isSideMenuOpen && (
         <div className="fixed inset-0 z-50 flex">
           <button
@@ -718,7 +720,7 @@ export default function MobileAccountTypePage({
         </div>
       )}
 
-      <div className={agenda ? "sticky top-0 z-40 -mx-4 -mt-6 border-b border-zinc-700/70 bg-black/75 px-4 py-5 shadow-lg shadow-black/30 backdrop-blur-md" : ""}>
+      <AppHeader className="">
       <div className="relative flex items-center justify-center">
         <button
           onClick={() => setIsSideMenuOpen(true)}
@@ -792,7 +794,7 @@ export default function MobileAccountTypePage({
         </div>
       </div>
 
-      </div>
+      </AppHeader>
 
       {showMoreOptionsModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">

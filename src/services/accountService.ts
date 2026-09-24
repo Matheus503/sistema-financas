@@ -1,4 +1,5 @@
 import { db } from "../lib/firestore";
+import { localDate, validDate } from "../lib/monthlyReport";
 import {
   collection,
   addDoc,
@@ -22,6 +23,7 @@ export type FinanceAccount = {
   value?: number;
   expectedValue?: number;
   isPaid?: boolean;
+  paidOn?: string;
   order?: number;
   dia_vencimento?: number;
   dia_fechamento?: number;
@@ -695,7 +697,13 @@ export const toggleAccountPaid = async (
 ) => {
   await updateDoc(doc(db, "months", monthId, "accounts", accountId), {
     isPaid: !current,
+    paidOn: current ? deleteField() : localDate(),
   });
+};
+
+export const updateAccountPaidOn = async (monthId: string, accountId: string, paidOn: string) => {
+  if (!validDate(paidOn) || paidOn > localDate()) throw new Error("Informe uma data válida, até hoje.");
+  await updateDoc(doc(db, "months", monthId, "accounts", accountId), { paidOn });
 };
 
 export const deleteAccount = async (monthId: string, accountId: string) => {

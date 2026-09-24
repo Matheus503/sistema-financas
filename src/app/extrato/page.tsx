@@ -1,5 +1,7 @@
 "use client";
 
+import AppHeader from "../../components/AppHeader";
+
 import SearchSelect from "../../components/SearchSelect";
 
 export const dynamic = "force-dynamic";
@@ -917,8 +919,8 @@ function ExtratoContent() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 px-6 pb-6 pt-[148px] text-white sm:pt-[126px]">
-      <div className="fixed left-0 right-0 top-0 z-40 flex flex-col gap-4 border-b border-zinc-700/70 bg-black/75 px-6 pb-4 pt-6 shadow-lg shadow-black/30 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 px-6 pb-6 text-white">
+      <AppHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Extrato de cartão</h1>
           <p className="text-zinc-400 text-sm">
@@ -956,7 +958,7 @@ function ExtratoContent() {
             Voltar
           </button>
         </div>
-      </div>
+      </AppHeader>
 
       <div className="bg-purple-800 p-6 rounded-2xl mb-6 flex justify-between items-center">
         <div>

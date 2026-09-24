@@ -1,5 +1,7 @@
 "use client";
 
+import AppHeader from "../../components/AppHeader";
+
 import SearchSelect from "../../components/SearchSelect";
 
 import { useValueVisibility } from "../../hooks/useValueVisibility";
@@ -859,9 +861,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black px-6 pb-6 pt-[180px] text-white xl:pt-[126px]">
+    <div className="min-h-screen bg-black px-6 pb-6 text-white">
       {/* HEADER */}
-      <div className="fixed left-0 right-0 top-0 z-40 flex flex-col gap-4 border-b border-zinc-700/70 bg-black/75 px-6 pb-4 pt-6 shadow-lg shadow-black/30 backdrop-blur-md xl:flex-row xl:items-start xl:justify-between">
+      <AppHeader className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-zinc-400 text-sm">Controle financeiro</p>
@@ -883,6 +885,9 @@ export default function DashboardPage() {
             className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl transition"
           >
             Extrato
+          </Link>
+          <Link href="/relatorio-mensal" className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl transition">
+            Relatório mensal
           </Link>
 
           <button
@@ -973,7 +978,7 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-      </div>
+      </AppHeader>
 
       {showMoreOptionsModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
