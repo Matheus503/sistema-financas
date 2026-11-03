@@ -234,11 +234,14 @@ export async function confirmFinancialGoalContribution(
 ) {
   await assertMonthExists(groupId, monthId, year, month);
   const { goals, plans, contributions } = await loadGoalSettings(groupId);
-  const goal = goals.find((item) => item.id === goalId);
+  const goal = goals.find((item) => item.id === goalId) as (Record<string, unknown> & { id: string }) | undefined;
   if (!goal) throw new Error("O objetivo não pertence ao espaço atual.");
   const currentKey = getMonthKey(year, month);
   const currentPlan = plans
-    .filter((item) => item.goalId === goalId && typeof item.effectiveMonth === "string" && item.effectiveMonth <= currentKey)
+    .filter((rawPlan) => {
+      const plan = rawPlan as Record<string, unknown>;
+      return plan.goalId === goalId && typeof plan.effectiveMonth === "string" && plan.effectiveMonth <= currentKey;
+    })
     .sort(comparePlanSnapshots)
     .at(-1) as (Record<string, unknown> & { id: string }) | undefined;
   if (!currentPlan) throw new Error("O planejamento mensal do objetivo não foi encontrado.");
@@ -246,7 +249,10 @@ export async function confirmFinancialGoalContribution(
   const goalData = currentData.goals.find((goal) => goal.id === goalId);
   if (!goalData || goalData.plannedMonthlyCents <= 0) throw new Error("Não há valor planejado para efetivar neste mês.");
   if (goalData.isConfirmedThisMonth) throw new Error("Este objetivo já foi efetivado neste mês.");
-  const duplicate = contributions.some((item) => item.goalId === goalId && item.effectiveMonth === currentKey);
+  const duplicate = contributions.some((rawContribution) => {
+    const contribution = rawContribution as Record<string, unknown>;
+    return contribution.goalId === goalId && contribution.effectiveMonth === currentKey;
+  });
   if (duplicate) throw new Error("Este objetivo já foi efetivado neste mês.");
   const contributionRef = doc(collection(db, "settings"));
   const batch = writeBatch(db);

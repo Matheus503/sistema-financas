@@ -222,9 +222,9 @@ export async function getInvestorPortfolioData(
       };
     });
 
-  const monthRecords = monthsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
-    .filter((item) => Number.isInteger(Number(item.year)) && Number.isInteger(Number(item.month)))
-    .map((item) => ({ id: String(item.id), year: Number(item.year), month: Number(item.month), key: getMonthKey(Number(item.year), Number(item.month)) }))
+  const monthRecords = monthsSnapshot.docs.map((item) => ({ id: item.id, data: item.data() as Record<string, unknown> }))
+    .filter((item) => Number.isInteger(Number(item.data.year)) && Number.isInteger(Number(item.data.month)))
+    .map((item) => ({ id: item.id, year: Number(item.data.year), month: Number(item.data.month), key: getMonthKey(Number(item.data.year), Number(item.data.month)) }))
     .sort((a, b) => a.key.localeCompare(b.key));
   summary.isLatestMonth = monthRecords[monthRecords.length - 1]?.id === monthId;
   const monthsThroughSelection = monthRecords.filter((item) => item.key <= selectedKey);
