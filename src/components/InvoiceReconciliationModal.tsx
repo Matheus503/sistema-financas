@@ -1,6 +1,6 @@
 "use client";
 
-import { FilePlus2, FileUp, Flag, Trash2 } from "lucide-react";
+import { FilePlus2, FileUp, Flag, Search, Trash2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { auth } from "../lib/auth";
@@ -42,6 +42,13 @@ const formatMoney = (value: number) =>
     style: "currency",
     currency: "BRL",
   });
+
+const normalizeSearchText = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .trim();
 
 const formatDate = (value: string) => {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -146,6 +153,45 @@ const EmptyColumn = ({ text }: { text: string }) => (
   </div>
 );
 
+const SearchField = ({
+  value,
+  onChange,
+  placeholder,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  label: string;
+}) => (
+  <div className="relative">
+    <Search
+      aria-hidden="true"
+      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+      size={17}
+    />
+    <input
+      type="search"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      aria-label={label}
+      className="w-full rounded-lg border border-zinc-800 bg-zinc-900/70 py-2 pl-9 pr-9 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-purple-500/60"
+    />
+    {value && (
+      <button
+        type="button"
+        onClick={() => onChange("")}
+        aria-label="Limpar busca"
+        title="Limpar busca"
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
+      >
+        <X size={15} />
+      </button>
+    )}
+  </div>
+);
+
 export default function InvoiceReconciliationModal({
   open,
   monthLabel,
@@ -165,6 +211,8 @@ export default function InvoiceReconciliationModal({
   const [showIgnoredEntries, setShowIgnoredEntries] = useState(false);
   const [showIgnoredSystemEntries, setShowIgnoredSystemEntries] =
     useState(false);
+  const [missingInSystemSearch, setMissingInSystemSearch] = useState("");
+  const [missingInNubankSearch, setMissingInNubankSearch] = useState("");
   const [savedImport, setSavedImport] = useState<SavedInvoiceImport | null>(
     null,
   );
@@ -216,6 +264,56 @@ export default function InvoiceReconciliationModal({
 
     return reconcileInvoice(activeNubankEntries, activeSystemItems);
   }, [activeNubankEntries, activeSystemItems, nubankEntries.length]);
+
+  const filteredMissingInSystem = useMemo(() => {
+    const query = normalizeSearchText(missingInSystemSearch);
+    const entries = [
+      ...(report?.missingInSystem || []),
+      ...(showIgnoredEntries ? ignoredNubankEntries : []),
+    ];
+    if (!query) return entries;
+
+    return entries.filter((entry) =>
+      normalizeSearchText(
+        [entry.title, entry.date, formatDate(entry.date), formatMoney(entry.amount), String(entry.amount), entry.rawAmount, entry.lineNumber]
+          .join(" "),
+      ).includes(query),
+    );
+  }, [
+    ignoredNubankEntries,
+    missingInSystemSearch,
+    report?.missingInSystem,
+    showIgnoredEntries,
+  ]);
+  const filteredMissingInNubank = useMemo(() => {
+    const query = normalizeSearchText(missingInNubankSearch);
+    const entries = [
+      ...(report?.missingInNubank || []),
+      ...(showIgnoredSystemEntries ? ignoredSystemEntries : []),
+    ];
+    if (!query) return entries;
+
+    return entries.filter((entry) =>
+      normalizeSearchText(
+        [
+          entry.category,
+          entry.note,
+          entry.accountName,
+          entry.date,
+          formatDate(entry.date),
+          formatMoney(entry.value),
+          String(entry.value),
+          entry.transactionId,
+          entry.id,
+        ].join(" "),
+      ).includes(query),
+    );
+  }, [
+    ignoredSystemEntries,
+    missingInNubankSearch,
+    report?.missingInNubank,
+    showIgnoredSystemEntries,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -539,22 +637,37 @@ export default function InvoiceReconciliationModal({
                         </div>
                       </div>
 
+                      <SearchField
+                        value={missingInSystemSearch}
+                        onChange={setMissingInSystemSearch}
+                        placeholder="Buscar por nome, valor ou data..."
+                        label="Buscar lançamentos não lançados no sistema"
+                      />
+
                       {report.missingInSystem.length === 0 &&
                       (!showIgnoredEntries ||
                         ignoredNubankEntries.length === 0) ? (
                         <EmptyColumn text="Nada do Nubank ficou sem lançamento no sistema." />
+                      ) : filteredMissingInSystem.length === 0 ? (
+                        <EmptyColumn text="Nenhum lançamento encontrado para esta busca." />
                       ) : (
                         <div className="category-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-                          {report.missingInSystem.map((entry) => (
+                          {filteredMissingInSystem.map((entry) => {
+                            const isIgnored = Boolean(
+                              entry.reconciliationKey &&
+                                ignoredEntryKeys.has(entry.reconciliationKey),
+                            );
+
+                            return (
                             <DifferenceCard
-                              key={entry.reconciliationKey || entry.id}
+                              key={`${isIgnored ? "ignored-" : ""}${entry.reconciliationKey || entry.id}`}
                               item={{
                                 title: "Lançamento não realizado",
                                 amount: entry.amount,
                                 description: `${formatDate(entry.date)} - ${entry.title}`,
-                                tone: "red",
+                                tone: isIgnored ? "purple" : "red",
                               }}
-                              action={
+                              action={!isIgnored &&
                                 onCreateMissingEntry && entry.amount > 0 ? (
                                   <button
                                     type="button"
@@ -571,38 +684,16 @@ export default function InvoiceReconciliationModal({
                                 <button
                                   type="button"
                                   onClick={() => toggleIgnoredEntry(entry)}
-                                  className="grid h-8 w-8 place-items-center rounded-lg text-zinc-500 transition hover:bg-purple-500/10 hover:text-purple-200"
-                                  aria-label="Ignorar lançamento"
-                                  title="Ignorar lançamento"
+                                  className={`grid h-8 w-8 place-items-center rounded-lg transition ${isIgnored ? "bg-purple-500/15 text-purple-200 hover:bg-purple-500/25" : "text-zinc-500 hover:bg-purple-500/10 hover:text-purple-200"}`}
+                                  aria-label={isIgnored ? "Voltar para a conciliação" : "Ignorar lançamento"}
+                                  title={isIgnored ? "Voltar para a conciliação" : "Ignorar lançamento"}
                                 >
-                                  <Flag size={17} />
+                                  <Flag size={17} fill={isIgnored ? "currentColor" : "none"} />
                                 </button>
                               }
                             />
-                          ))}
-                          {showIgnoredEntries &&
-                            ignoredNubankEntries.map((entry) => (
-                              <DifferenceCard
-                                key={`ignored-${entry.reconciliationKey || entry.id}`}
-                                item={{
-                                  title: "Lançamento não realizado",
-                                  amount: entry.amount,
-                                  description: `${formatDate(entry.date)} - ${entry.title}`,
-                                  tone: "purple",
-                                }}
-                                cornerAction={
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleIgnoredEntry(entry)}
-                                    className="grid h-8 w-8 place-items-center rounded-lg bg-purple-500/15 text-purple-200 transition hover:bg-purple-500/25"
-                                    aria-label="Voltar para a conciliação"
-                                    title="Voltar para a conciliação"
-                                  >
-                                    <Flag size={17} fill="currentColor" />
-                                  </button>
-                                }
-                              />
-                            ))}
+                            );
+                          })}
                         </div>
                       )}
                     </section>
@@ -635,22 +726,36 @@ export default function InvoiceReconciliationModal({
                         </div>
                       </div>
 
+                      <SearchField
+                        value={missingInNubankSearch}
+                        onChange={setMissingInNubankSearch}
+                        placeholder="Buscar por categoria, conta, valor ou data..."
+                        label="Buscar lançamentos que não existem no Nubank"
+                      />
+
                       {report.missingInNubank.length === 0 &&
                       (!showIgnoredSystemEntries ||
                         ignoredSystemEntries.length === 0) ? (
                         <EmptyColumn text="Nenhum lançamento do sistema ficou sem par no Nubank." />
+                      ) : filteredMissingInNubank.length === 0 ? (
+                        <EmptyColumn text="Nenhum lançamento encontrado para esta busca." />
                       ) : (
                         <div className="category-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-                          {report.missingInNubank.map((entry) => (
+                          {filteredMissingInNubank.map((entry) => {
+                            const isIgnored = ignoredSystemEntryKeys.has(
+                              getSystemEntryKey(entry),
+                            );
+
+                            return (
                             <DifferenceCard
-                              key={entry.id}
+                              key={`${isIgnored ? "ignored-system-" : ""}${getSystemEntryKey(entry)}`}
                               item={{
                                 title: "Não existe no Nubank",
                                 amount: entry.value,
                                 description: `${formatDate(entry.date)} - ${systemDescription(entry)}`,
-                                tone: "orange",
+                                tone: isIgnored ? "purple" : "orange",
                               }}
-                              action={
+                              action={!isIgnored &&
                                 onDeleteSystemEntry ? (
                                   <button
                                     type="button"
@@ -669,11 +774,11 @@ export default function InvoiceReconciliationModal({
                                   onClick={() =>
                                     toggleIgnoredSystemEntry(entry)
                                   }
-                                  className="grid h-8 w-8 place-items-center rounded-lg text-zinc-500 transition hover:bg-purple-500/10 hover:text-purple-200"
-                                  aria-label="Ignorar lançamento"
-                                  title="Ignorar lançamento"
+                                  className={`grid h-8 w-8 place-items-center rounded-lg transition ${isIgnored ? "bg-purple-500/15 text-purple-200 hover:bg-purple-500/25" : "text-zinc-500 hover:bg-purple-500/10 hover:text-purple-200"}`}
+                                  aria-label={isIgnored ? "Voltar para a conciliação" : "Ignorar lançamento"}
+                                  title={isIgnored ? "Voltar para a conciliação" : "Ignorar lançamento"}
                                 >
-                                  <Flag size={17} />
+                                  <Flag size={17} fill={isIgnored ? "currentColor" : "none"} />
                                 </button>
                               }
                               onAmountClick={
@@ -682,32 +787,8 @@ export default function InvoiceReconciliationModal({
                                   : undefined
                               }
                             />
-                          ))}
-                          {showIgnoredSystemEntries &&
-                            ignoredSystemEntries.map((entry) => (
-                              <DifferenceCard
-                                key={`ignored-system-${getSystemEntryKey(entry)}`}
-                                item={{
-                                  title: "Não existe no Nubank",
-                                  amount: entry.value,
-                                  description: `${formatDate(entry.date)} - ${systemDescription(entry)}`,
-                                  tone: "purple",
-                                }}
-                                cornerAction={
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      toggleIgnoredSystemEntry(entry)
-                                    }
-                                    className="grid h-8 w-8 place-items-center rounded-lg bg-purple-500/15 text-purple-200 transition hover:bg-purple-500/25"
-                                    aria-label="Voltar para a conciliação"
-                                    title="Voltar para a conciliação"
-                                  >
-                                    <Flag size={17} fill="currentColor" />
-                                  </button>
-                                }
-                              />
-                            ))}
+                            );
+                          })}
                         </div>
                       )}
                     </section>

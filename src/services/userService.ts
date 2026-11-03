@@ -1,7 +1,9 @@
 import type { User } from "firebase/auth";
 import {
+  runTransaction,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -15,6 +17,8 @@ import {
   type DocumentReference,
 } from "firebase/firestore";
 import { db } from "../lib/firestore";
+import { createCurrentMonth } from "./monthService";
+import { seedDefaultCategoriesForGroup } from "./categoryService";
 
 export type UserRole = "admin" | "member";
 
@@ -26,6 +30,8 @@ export type UserProfile = {
   role: UserRole;
   createdAt?: unknown;
   lastLogin?: unknown;
+  personalGroupId?: string;
+  activeSpace?: "family" | "personal";
 };
 
 export type GroupMemberListItem = {
@@ -64,6 +70,11 @@ let pendingProfile:
       promise: Promise<UserProfile>;
     }
   | null = null;
+
+const applySpaceTheme = (space: "family" | "personal") => {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.theme = space;
+};
 
 const getAssignedGroupId = async (email: string) => {
   const normalizedEmail = normalizeEmail(email);
@@ -115,17 +126,25 @@ const getUserRole = async (uid: string, groupId: string): Promise<UserRole> => {
 };
 
 export const ensureUserProfile = async (user: User) => {
-  const email = normalizeEmail(user.email || "");
+  let promise = pendingProfile?.uid === user.uid
+    ? pendingProfile.promise
+    : null;
 
-  if (pendingProfile?.uid === user.uid) {
-    return pendingProfile.promise;
+  if (!promise) {
+    const email = normalizeEmail(user.email || "");
+    promise = (async () => {
+      const profile = await ensureUserProfileRemote(user, email);
+      if (profile.activeSpace !== "personal") {
+        applySpaceTheme("family");
+        return profile;
+      }
+
+      const personalGroupId = await ensurePersonalSpace(user);
+      applySpaceTheme("personal");
+      return { ...profile, groupId: personalGroupId, role: "admin" as const };
+    })();
+    pendingProfile = { uid: user.uid, promise };
   }
-
-  const promise = ensureUserProfileRemote(user, email);
-  pendingProfile = {
-    uid: user.uid,
-    promise,
-  };
 
   try {
     return await promise;
@@ -134,6 +153,51 @@ export const ensureUserProfile = async (user: User) => {
       pendingProfile = null;
     }
   }
+};
+
+export const ensurePersonalSpace = async (user: User) => {
+  const userRef = doc(db, "users", user.uid);
+  const groupRef = doc(collection(db, "groups"));
+  const personalGroupId = await runTransaction(db, async (transaction) => {
+    const userSnap = await transaction.get(userRef);
+    if (!userSnap.exists()) throw new Error("Perfil do usuário não encontrado.");
+    const profile = userSnap.data() as UserProfile;
+    if (profile.personalGroupId) return profile.personalGroupId;
+
+    transaction.set(groupRef, {
+      name: `Pessoal ${getUserName(user)}`,
+      ownerUid: user.uid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      spaceType: "personal",
+    });
+    transaction.update(userRef, { personalGroupId: groupRef.id });
+    return groupRef.id;
+  });
+  const legacyEmails = [
+    "matheus.gomesmoreira@gmail.com",
+    "giovana.bonardi96@gmail.com",
+  ];
+  const existingMonths = await getDocs(
+    query(collection(db, "months"), where("groupId", "==", personalGroupId)),
+  );
+  if (existingMonths.empty) {
+    await createCurrentMonth(user.uid, personalGroupId);
+  }
+  await seedDefaultCategoriesForGroup(personalGroupId, {
+    preset: legacyEmails.includes(normalizeEmail(user.email || ""))
+      ? "legacy"
+      : "generic",
+  });
+  return personalGroupId;
+};
+
+export const setActiveSpace = async (
+  user: User,
+  activeSpace: "family" | "personal",
+) => {
+  await updateDoc(doc(db, "users", user.uid), { activeSpace });
+  applySpaceTheme(activeSpace);
 };
 
 const ensureUserProfileRemote = async (user: User, email: string) => {
@@ -245,6 +309,23 @@ export const getGroupMembers = async (groupId: string) => {
       role: user.uid === ownerUid ? ("admin" as const) : ("member" as const),
     };
   });
+
+  if (ownerUid && !activeMembers.some((member) => member.id === ownerUid)) {
+    const ownerSnap = await getDoc(doc(db, "users", ownerUid));
+    if (ownerSnap.exists()) {
+      const owner = ownerSnap.data() as UserProfile;
+      if (owner.personalGroupId === groupId) {
+        activeMembers.push({
+          id: owner.uid,
+          name: owner.name,
+          email: owner.email,
+          groupId,
+          status: "active",
+          role: "admin",
+        });
+      }
+    }
+  }
 
   const activeEmails = new Set(activeMembers.map((item) => item.email));
 
@@ -370,6 +451,34 @@ export const deleteCurrentUserAccount = async (profile: UserProfile) => {
 
   const role = await getUserRole(profile.uid, profile.groupId);
   const refsToDelete: Array<DocumentReference<DocumentData>> = [];
+
+  if (profile.personalGroupId === profile.groupId) {
+    const monthsSnap = await getDocs(
+      query(collection(db, "months"), where("groupId", "==", profile.groupId)),
+    );
+    for (const monthDoc of monthsSnap.docs) {
+      const [accountsSnap, transactionsSnap] = await Promise.all([
+        getDocs(collection(db, "months", monthDoc.id, "accounts")),
+        getDocs(collection(db, "months", monthDoc.id, "transactions")),
+      ]);
+      accountsSnap.docs.forEach((item) => refsToDelete.push(item.ref));
+      transactionsSnap.docs.forEach((item) => refsToDelete.push(item.ref));
+      refsToDelete.push(monthDoc.ref);
+    }
+    const groupedCollections = await Promise.all(
+      ["categories", "investments", "settings", "configurations", "installmentPurchases", "groupAssignments"].map(
+        (collectionName) => getGroupCollectionRefs(collectionName, profile.groupId),
+      ),
+    );
+    groupedCollections.flat().forEach((ref) => refsToDelete.push(ref));
+    refsToDelete.push(doc(db, "groups", profile.groupId));
+    await commitDeleteRefs(refsToDelete);
+    await updateDoc(doc(db, "users", profile.uid), {
+      personalGroupId: deleteField(),
+      activeSpace: "family",
+    });
+    return;
+  }
 
   if (role === "admin") {
     const monthsSnap = await getDocs(

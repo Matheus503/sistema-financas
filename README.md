@@ -34,3 +34,10 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## App mobile (Expo)
+
+O aplicativo para iPhone fica em `apps/mobile` e usa o Firebase de desenvolvimento configurado em `apps/mobile/.env.local` (arquivo local, não versionado). Instale o Expo Go no iPhone e inicie o projeto com `npm run start --workspace=apps/mobile`; escaneie o QR code exibido no terminal.
+
+O login Google nativo ainda precisa ser configurado. Depois de autenticado, o app chama a rotina compartilhada de criação do perfil, grupo, mês corrente e categorias padrão.
+

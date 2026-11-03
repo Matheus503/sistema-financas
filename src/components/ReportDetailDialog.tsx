@@ -40,6 +40,8 @@ export default function ReportDetailDialog({ id = "month-detail", compact = fals
       aria-labelledby={`${id}-title`}
       aria-modal="true"
       aria-busy={busy}
+      onPointerDown={event => event.stopPropagation()}
+      onPointerUp={event => event.stopPropagation()}
       onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!busy) onClose(); }}
       onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget && !busy) onClose(); }}
       className={`m-auto w-[calc(100%-2rem)] ${compact ? "max-w-80" : "max-w-3xl"} max-h-[90dvh] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-white backdrop:bg-black/70`}

@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Controle Financeiro",
+    "slug": "sistema-financas-mobile",
+    "scheme": "sistemafinancas",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "plugins": ["expo-router", "@react-native-google-signin/google-signin"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.sistemafinancas.mobile",
+      "googleServicesFile": "./GoogleService-Info.plist"
+    },
+    "android": {
+      "package": "com.sistemafinancas.mobile"
+    }
+  }
+}

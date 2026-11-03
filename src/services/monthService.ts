@@ -464,6 +464,11 @@ export const createMonth = async (
   return monthRef.id;
 };
 
+export const createCurrentMonth = async (userId: string, groupId: string) => {
+  const now = new Date();
+  return createMonth(now.getFullYear(), now.getMonth() + 1, userId, groupId);
+};
+
 export const getAllMonths = async (groupId: string) => {
   const snap = await getDocs(
     query(collection(db, "months"), where("groupId", "==", groupId))

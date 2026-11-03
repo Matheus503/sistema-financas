@@ -128,6 +128,9 @@ const addMonthsToInvoice = (
   };
 };
 
+const getMonthIndex = (month: { year: number; month: number }) =>
+  month.year * 12 + month.month - 1;
+
 const splitCurrencyInCents = (totalValue: number, installments: number) => {
   const totalCents = Math.round(totalValue * 100);
   const baseCents = Math.floor(totalCents / installments);
@@ -719,6 +722,37 @@ export default function LaunchModal({
 
     try {
       const profile = await ensureUserProfile(auth.currentUser);
+
+      if (isCreditCardSelected || isPixSelected) {
+        const closingDay = isPixSelected
+          ? getAccountClosingDay(selected)
+          : getCreditCardClosingDay(selected);
+        const invoiceMonth = getInvoiceMonth(launchDate, closingDay);
+        const currentInvoiceMonth = getInvoiceMonth(
+          getTodayDateKey(),
+          closingDay,
+        );
+        const selectedMonth = (await getAllMonths(profile.groupId)).find(
+          (month) => month.id === monthId,
+        );
+        const referenceInvoiceMonth = selectedMonth?.year && selectedMonth?.month
+          ? { year: selectedMonth.year, month: selectedMonth.month }
+          : currentInvoiceMonth;
+        const nextInvoiceMonth = addMonthsToInvoice(referenceInvoiceMonth, 1);
+        const targetInvoiceIndex = getMonthIndex(invoiceMonth);
+        const currentInvoiceIndex = getMonthIndex(referenceInvoiceMonth);
+        const nextInvoiceIndex = getMonthIndex(nextInvoiceMonth);
+
+        if (
+          targetInvoiceIndex < currentInvoiceIndex ||
+          targetInvoiceIndex > nextInvoiceIndex
+        ) {
+          toast.error(
+            `Este lançamento ultrapassa o limite de uma fatura futura. A data deve gerar uma fatura até ${String(nextInvoiceMonth.month).padStart(2, "0")}/${nextInvoiceMonth.year}.`,
+          );
+          return;
+        }
+      }
 
       if (isCreditCardSelected && parsedInstallments > 1) {
         if (selected.isArchived === true) {

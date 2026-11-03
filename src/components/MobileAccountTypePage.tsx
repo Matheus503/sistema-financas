@@ -20,7 +20,9 @@ import {
   deleteGroupMember,
   deleteCurrentUserAccount,
   ensureUserProfile,
+  ensurePersonalSpace,
   getGroupMembers,
+  setActiveSpace,
   type GroupMemberListItem,
 } from "../services/userService";
 import {
@@ -75,6 +77,7 @@ export default function MobileAccountTypePage({
 
   const [user, setUser] = useState<any>(null);
   const [groupId, setGroupId] = useState("");
+  const [activeSpace, setActiveSpaceState] = useState<"family" | "personal">("family");
   const [months, setMonths] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [monthId, setMonthId] = useState<string | null>(null);
@@ -256,6 +259,11 @@ export default function MobileAccountTypePage({
     try {
       const currentProfile = await ensureUserProfile(currentUser);
       await deleteCurrentUserAccount(currentProfile);
+      if (currentProfile.personalGroupId === currentProfile.groupId) {
+        toast.success("Espaço pessoal excluído.");
+        window.location.reload();
+        return;
+      }
       await auth.signOut();
       router.push("/");
       toast.success("Conta excluida com sucesso.");
@@ -311,6 +319,7 @@ export default function MobileAccountTypePage({
 
       const profile = await ensureUserProfile(user);
       setGroupId(profile.groupId);
+      setActiveSpaceState(profile.activeSpace === "personal" ? "personal" : "family");
       setPixLauncherFilter(user.uid || ALL_LAUNCHERS);
 
       const [all, groupMembers] = await Promise.all([
@@ -333,6 +342,21 @@ export default function MobileAccountTypePage({
 
     load();
   }, [router]);
+
+  const switchSpace = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const nextSpace = activeSpace === "family" ? "personal" : "family";
+    try {
+      if (nextSpace === "personal") await ensurePersonalSpace(currentUser);
+      await setActiveSpace(currentUser, nextSpace);
+      setShowUserMenu(false);
+      window.location.reload();
+    } catch (error) {
+      console.error("Erro ao alternar espaço:", error);
+      toast.error("Não foi possível alternar o espaço.");
+    }
+  };
 
 
   const getAccountValue = (account: FinanceAccount) => {
@@ -669,7 +693,7 @@ export default function MobileAccountTypePage({
     isInstallmentAccount(accountToDelete);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 pb-24 flex flex-col gap-5">
+    <div data-theme={activeSpace} className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 pb-24 flex flex-col gap-5">
       {isSideMenuOpen && (
         <div className="fixed inset-0 z-50 flex">
           <button
@@ -763,6 +787,13 @@ export default function MobileAccountTypePage({
 
           {showUserMenu && (
             <div className="absolute right-0 mt-2 min-w-36 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 z-50">
+              <button
+                onClick={switchSpace}
+                className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+                type="button"
+              >
+                {activeSpace === "personal" ? "Família" : "Pessoal"}
+              </button>
               <button
                 onClick={openMembers}
                 className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"

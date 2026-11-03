@@ -17,7 +17,14 @@ service cloud.firestore {
     function isGroupMember(groupId) {
       return isSignedIn()
         && groupId is string
-        && userDoc().data.groupId == groupId;
+        && (
+          userDoc().data.groupId == groupId
+          || (
+            exists(/databases/$(database)/documents/groups/$(groupId))
+            && get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == request.auth.uid
+            && userDoc().data.personalGroupId == groupId
+          )
+        );
     }
 
     function isBootstrapGroup(groupId) {

@@ -6,18 +6,20 @@ import SearchSelect from "../../components/SearchSelect";
 
 import { useValueVisibility } from "../../hooks/useValueVisibility";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarDays, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { auth } from "../../lib/auth";
-import { createMonth, getAllMonths } from "../../services/monthService";
+import { createCurrentMonth, createMonth, getAllMonths } from "../../services/monthService";
 import {
   createGroupAssignment,
   deleteGroupMember,
   deleteCurrentUserAccount,
   ensureUserProfile,
+  ensurePersonalSpace,
+  setActiveSpace,
   ExistingOwnerAccountError,
   getGroupMembers,
   type GroupMemberListItem,
@@ -40,6 +42,8 @@ import type { FinanceAccount } from "../../services/accountService";
 
 import MonthSelect from "../../components/MonthSelect";
 import AccountColumn from "../../components/AccountColumn";
+import InvestorSettingsPanel from "../../components/InvestorSettingsPanel";
+import FinancialGoalsPanel from "../../components/FinancialGoalsPanel";
 import PaymentSchedule from "../../components/PaymentSchedule";
 import LaunchModal from "../../components/LaunchModal";
 import CreateAccountModal from "../../components/CreateAccountModal";
@@ -50,6 +54,13 @@ import { useModalKeyboardActions } from "../../hooks/useModalKeyboardActions";
 const ALL_LAUNCHERS = "all";
 
 type LauncherFilter = string;
+type DashboardArea = "finances" | "investor" | "goals";
+const DASHBOARD_AREAS: DashboardArea[] = ["finances", "investor", "goals"];
+const DASHBOARD_AREA_LABELS: Record<DashboardArea, string> = {
+  finances: "Finanças",
+  investor: "Investidor",
+  goals: "Objetivos",
+};
 
 function EyeIcon() {
   return (
@@ -103,10 +114,13 @@ export default function DashboardPage() {
   const [groupId, setGroupId] = useState("");
   const [showValues, setShowValues] = useValueVisibility();
   const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
+  const [activeDashboardPage, setActiveDashboardPage] = useState<DashboardArea>("finances");
 
   const [months, setMonths] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [monthId, setMonthId] = useState<string | null>(null);
+  const [investorCashOutflow, setInvestorCashOutflow] = useState({ scope: "", amountCents: 0 });
+  const [goalMonthlyPlan, setGoalMonthlyPlan] = useState({ scope: "", amountCents: 0 });
 
   const [showForm, setShowForm] = useState(false);
   const [createModal, setCreateModal] = useState<{
@@ -137,6 +151,7 @@ export default function DashboardPage() {
     useState<any>(null);
 
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [activeSpace, setActiveSpaceState] = useState<"family" | "personal">("family");
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [members, setMembers] = useState<GroupMemberListItem[]>([]);
@@ -150,6 +165,7 @@ export default function DashboardPage() {
   const [showMoreOptionsModal, setShowMoreOptionsModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
 
   const {
     accounts,
@@ -161,6 +177,20 @@ export default function DashboardPage() {
     getAccountValue,
     saldo,
   } = useFinance();
+
+  const investorCashScope = `${groupId}:${monthId || ""}`;
+  const selectedMonthInvestorCashOutflow = investorCashOutflow.scope === investorCashScope
+    ? investorCashOutflow.amountCents / 100
+    : 0;
+  const updateInvestorCashOutflow = useCallback((amountCents: number) => {
+    setInvestorCashOutflow({ scope: investorCashScope, amountCents });
+  }, [investorCashScope]);
+  const selectedMonthGoalPlan = goalMonthlyPlan.scope === investorCashScope
+    ? goalMonthlyPlan.amountCents / 100
+    : 0;
+  const updateGoalMonthlyPlan = useCallback((amountCents: number) => {
+    setGoalMonthlyPlan({ scope: investorCashScope, amountCents });
+  }, [investorCashScope]);
 
   const formatMoney = (v: number) => {
     if (!showValues) return "R$ ••••••";
@@ -222,13 +252,17 @@ export default function DashboardPage() {
     getExpectedTotalByType("CREDIT") -
     accounts
       .filter((a) => a.type !== "CREDIT")
-      .reduce((sum, acc) => sum + getExpectedAccountValue(acc), 0);
+      .reduce((sum, acc) => sum + getExpectedAccountValue(acc), 0) -
+    selectedMonthInvestorCashOutflow - selectedMonthGoalPlan;
+  const saldoReal = saldo - selectedMonthInvestorCashOutflow - selectedMonthGoalPlan;
 
   const clearAppState = () => {
     setMonths([]);
     setGroupId("");
     setCurrentIndex(0);
     setMonthId(null);
+    setInvestorCashOutflow({ scope: "", amountCents: 0 });
+    setGoalMonthlyPlan({ scope: "", amountCents: 0 });
     setAccounts([]);
     setTransactions([]);
     setShowForm(false);
@@ -290,6 +324,7 @@ export default function DashboardPage() {
   }
 
   setGroupId(profile.groupId);
+  setActiveSpaceState(profile.activeSpace === "personal" ? "personal" : "family");
   setPixLauncherFilter(u.uid || ALL_LAUNCHERS);
 
   try {
@@ -302,7 +337,7 @@ export default function DashboardPage() {
   let all = await getAllMonths(profile.groupId);
 
   if (all.length === 0) {
-    await createMonth(2026, 1, u.uid, profile.groupId);
+    await createCurrentMonth(u.uid, profile.groupId);
     all = await getAllMonths(profile.groupId);
   }
 
@@ -374,6 +409,11 @@ export default function DashboardPage() {
     try {
       const currentProfile = await ensureUserProfile(currentUser);
       await deleteCurrentUserAccount(currentProfile);
+      if (currentProfile.personalGroupId === currentProfile.groupId) {
+        toast.success("Espaço pessoal excluído.");
+        window.location.reload();
+        return;
+      }
       await auth.signOut();
       clearAppState();
       router.push("/");
@@ -383,6 +423,21 @@ export default function DashboardPage() {
       toast.error("Nao foi possivel excluir a conta.");
     } finally {
       setIsDeletingAccount(false);
+    }
+  };
+
+  const switchSpace = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const nextSpace = activeSpace === "family" ? "personal" : "family";
+    try {
+      if (nextSpace === "personal") await ensurePersonalSpace(currentUser);
+      await setActiveSpace(currentUser, nextSpace);
+      setShowUserMenu(false);
+      window.location.reload();
+    } catch (error) {
+      console.error("Erro ao alternar espaço:", error);
+      toast.error("Não foi possível alternar o espaço.");
     }
   };
 
@@ -860,8 +915,37 @@ export default function DashboardPage() {
     );
   }
 
+  const showInvestorArea = () => setActiveDashboardPage("investor");
+  const showPreviousArea = () => setActiveDashboardPage((current) => {
+    const index = DASHBOARD_AREAS.indexOf(current);
+    return DASHBOARD_AREAS[Math.max(0, index - 1)];
+  });
+  const showNextArea = () => setActiveDashboardPage((current) => {
+    const index = DASHBOARD_AREAS.indexOf(current);
+    return DASHBOARD_AREAS[Math.min(DASHBOARD_AREAS.length - 1, index + 1)];
+  });
+  const dashboardAreaIndex = DASHBOARD_AREAS.indexOf(activeDashboardPage);
+  const previousArea = dashboardAreaIndex > 0 ? DASHBOARD_AREAS[dashboardAreaIndex - 1] : null;
+  const nextArea = dashboardAreaIndex < DASHBOARD_AREAS.length - 1 ? DASHBOARD_AREAS[dashboardAreaIndex + 1] : null;
+  const dashboardSlideTransform = activeDashboardPage === "finances"
+    ? "translate-x-0"
+    : activeDashboardPage === "investor" ? "-translate-x-1/3" : "-translate-x-2/3";
+
+  const handleDashboardPointerStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    setSwipeStartX(event.clientX);
+  };
+
+  const handleDashboardPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (swipeStartX === null) return;
+    const deltaX = event.clientX - swipeStartX;
+    if (deltaX < -70) showNextArea();
+    if (deltaX > 70) showPreviousArea();
+    setSwipeStartX(null);
+  };
+
   return (
-    <div className="min-h-screen bg-black px-6 pb-6 text-white">
+    <div data-theme={activeSpace} className="min-h-screen bg-black px-6 pb-6 text-white">
       {/* HEADER */}
       <AppHeader className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
@@ -948,6 +1032,13 @@ export default function DashboardPage() {
 
             {showUserMenu && (
               <div className="absolute right-0 mt-2 bg-zinc-900 rounded shadow p-2 z-50">
+                <button
+                  onClick={switchSpace}
+                  className="px-4 py-2 hover:bg-zinc-800 rounded w-full text-left"
+                  type="button"
+                >
+                  {activeSpace === "personal" ? "Família" : "Pessoal"}
+                </button>
                 <button
                   onClick={openMembers}
                   className="px-4 py-2 hover:bg-zinc-800 rounded w-full text-left"
@@ -1232,7 +1323,7 @@ export default function DashboardPage() {
           <div>
             <h2 className="text-sm text-purple-100">Saldo real</h2>
             <p className="text-2xl font-bold text-white">
-              {formatMoney(saldo)}
+              {formatMoney(saldoReal)}
             </p>
           </div>
 
@@ -1257,11 +1348,50 @@ export default function DashboardPage() {
         </button>
       </div>
 
+      <div className="mb-4 flex items-center justify-between gap-3" aria-label="Navegação das áreas do dashboard">
+        <button
+          type="button"
+          onClick={showPreviousArea}
+          disabled={!previousArea}
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:cursor-default disabled:text-white"
+          aria-label={`Mostrar área ${DASHBOARD_AREA_LABELS[previousArea || "finances"]}`}
+        >
+          <ArrowLeft size={16} /> {DASHBOARD_AREA_LABELS[previousArea || "finances"]}
+        </button>
+        <div className="flex items-center gap-2" aria-hidden="true">
+          {DASHBOARD_AREAS.map((area) => <span key={area} className={`h-2 w-2 rounded-full ${activeDashboardPage === area ? "bg-purple-400" : "bg-zinc-700"}`} />)}
+        </div>
+        <button
+          type="button"
+          onClick={showNextArea}
+          disabled={!nextArea}
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:cursor-default disabled:text-white"
+          aria-label={`Mostrar área ${DASHBOARD_AREA_LABELS[nextArea || "goals"]}`}
+        >
+          {DASHBOARD_AREA_LABELS[nextArea || "goals"]} <ArrowRight size={16} />
+        </button>
+      </div>
+
+      <div
+        className="overflow-hidden touch-pan-y"
+        onPointerDown={handleDashboardPointerStart}
+        onPointerUp={handleDashboardPointerEnd}
+        onPointerCancel={() => setSwipeStartX(null)}
+        onKeyDown={(event) => {
+          if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, button, [contenteditable='true']")) return;
+          if (event.key === "ArrowRight") showNextArea();
+          if (event.key === "ArrowLeft") showPreviousArea();
+        }}
+        tabIndex={0}
+        aria-label="Áreas do sistema financeiro. Use as setas esquerda e direita para navegar."
+      >
+        <div className={`flex w-[300%] transition-transform duration-300 ease-out ${dashboardSlideTransform}`}>
+      <section className="w-1/3 shrink-0 pr-2" aria-label="Área financeira" aria-hidden={activeDashboardPage !== "finances"} inert={activeDashboardPage !== "finances"}>
       {/* COLUNAS */}
-      {showPaymentSchedule && (
+      {showPaymentSchedule && activeDashboardPage === "finances" && (
         <PaymentSchedule accounts={accounts} getAccountValue={getAccountValue} formatMoney={formatMoney} onClose={() => setShowPaymentSchedule(false)} />
       )}
-      <div className={showPaymentSchedule ? "hidden" : "grid grid-cols-3 items-start gap-4"}>
+      <div className={showPaymentSchedule ? "hidden" : "grid grid-cols-1 items-start gap-4 md:grid-cols-3"}>
         <AccountColumn
           title="Créditos"
           type="CREDIT"
@@ -1306,6 +1436,48 @@ export default function DashboardPage() {
           onEditExpectedValue={openExpectedEdit}
           onReorder={handleReorderAccounts}
         />
+      </div>
+      </section>
+
+      <section className="w-1/3 shrink-0 px-2" aria-label="Área do investidor" aria-hidden={activeDashboardPage !== "investor"} inert={activeDashboardPage !== "investor"}>
+        {months[currentIndex] && groupId ? (
+          <InvestorSettingsPanel
+            key={`${groupId}:${monthId}`}
+            groupId={groupId}
+            userId={auth.currentUser?.uid || ""}
+            monthId={monthId!}
+            year={months[currentIndex].year}
+            month={months[currentIndex].month}
+            formatMoney={formatMoney}
+            onSaved={showInvestorArea}
+            onMonthlyCashOutflowChange={updateInvestorCashOutflow}
+          />
+        ) : (
+          <div className="min-h-[420px] rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 text-sm text-zinc-400">
+            Selecione um mês para configurar o planejamento de investimentos.
+          </div>
+        )}
+      </section>
+
+      <section className="w-1/3 shrink-0 pl-2" aria-label="Objetivos financeiros" aria-hidden={activeDashboardPage !== "goals"} inert={activeDashboardPage !== "goals"}>
+        {months[currentIndex] && groupId ? (
+          <FinancialGoalsPanel
+            key={`${groupId}:${monthId}:goals`}
+            groupId={groupId}
+            userId={auth.currentUser?.uid || ""}
+            monthId={monthId!}
+            year={months[currentIndex].year}
+            month={months[currentIndex].month}
+            formatMoney={formatMoney}
+            onMonthlyPlanChange={updateGoalMonthlyPlan}
+          />
+        ) : (
+          <div className="min-h-[420px] rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 text-sm text-zinc-400">
+            Selecione um mês para organizar seus objetivos financeiros.
+          </div>
+        )}
+      </section>
+        </div>
       </div>
 
       {/* MODAL EDITAR */}

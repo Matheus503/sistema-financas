@@ -118,7 +118,7 @@ export default function MonthlyReportPage() {
           {showValues ? <div className="h-[clamp(11rem,30dvh,15rem)] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={report.rows.filter(r => r.status === "complete" || r.status === "current")} accessibilityLayer margin={{ top: 10, right: 5, left: 5, bottom: 5 }}>
             <CartesianGrid vertical={false} stroke="#3f3f46" /><XAxis dataKey="shortName" stroke="#a1a1aa" tick={{ fontSize: 12 }} /><YAxis width={65} stroke="#a1a1aa" tick={{ fontSize: 12 }} tickFormatter={v => Number(v).toLocaleString("pt-BR", { notation: "compact" })} />
             <Tooltip formatter={value => currency(Number(value))} labelFormatter={label => `${label} / ${year}`} contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 12, color: "#fff" }} cursor={{ fill: "#27272a" }} /><Legend />
-            <Bar dataKey="received" name="Recebido" fill="#34d399" stackId="income" radius={[4, 4, 0, 0]} /><Bar dataKey="fixed" name="Fixas pagas" fill="#a78bfa" stackId="expenses" /><Bar dataKey="variable" name="Variáveis pagas" fill="#fbbf24" stackId="expenses" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="received" name="Recebido" fill="#34d399" stackId="income" radius={[4, 4, 0, 0]} /><Bar dataKey="fixed" name="Fixas pagas" fill="var(--color-purple-400)" stackId="expenses" /><Bar dataKey="variable" name="Variáveis pagas" fill="#fbbf24" stackId="expenses" radius={[4, 4, 0, 0]} />
           </BarChart></ResponsiveContainer></div> : <p className="py-6 text-center text-sm text-zinc-400">Mostre os valores para visualizar o gráfico.</p>}
           </>}
           </div>

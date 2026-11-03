@@ -21,12 +21,14 @@ import {
 import { toast } from "sonner";
 
 import { auth } from "../../lib/auth";
-import { getAllMonths } from "../../services/monthService";
+import { createCurrentMonth, createMonth, getAllMonths } from "../../services/monthService";
 import {
   createGroupAssignment,
   deleteGroupMember,
   deleteCurrentUserAccount,
   ensureUserProfile,
+  ensurePersonalSpace,
+  setActiveSpace,
   ExistingOwnerAccountError,
   getGroupMembers,
   type GroupMemberListItem,
@@ -70,6 +72,7 @@ export default function MobileDashboard() {
 
   const [months, setMonths] = useState<any[]>([]);
   const [groupId, setGroupId] = useState("");
+  const [activeSpace, setActiveSpaceState] = useState<"family" | "personal">("family");
   const [currentIndex, setCurrentIndex] =
     useState(0);
 
@@ -371,6 +374,11 @@ export default function MobileDashboard() {
     try {
       const currentProfile = await ensureUserProfile(currentUser);
       await deleteCurrentUserAccount(currentProfile);
+      if (currentProfile.personalGroupId === currentProfile.groupId) {
+        toast.success("Espaço pessoal excluído.");
+        window.location.reload();
+        return;
+      }
       await auth.signOut();
       router.push("/");
       toast.success("Conta excluida com sucesso.");
@@ -723,21 +731,21 @@ export default function MobileDashboard() {
       }
 
       setGroupId(profile.groupId);
+      setActiveSpaceState(profile.activeSpace === "personal" ? "personal" : "family");
 
-      const [all, groupMembers] =
+      const [initialMonths, groupMembers] =
         await Promise.all([
           getAllMonths(profile.groupId),
           getGroupMembers(profile.groupId),
         ]);
+      let all = initialMonths;
+
+      if (all.length === 0) {
+        await createCurrentMonth(user.uid, profile.groupId);
+        all = await getAllMonths(profile.groupId);
+      }
 
       setMembers(groupMembers);
-
-      if (
-        !all ||
-        all.length === 0
-      ) {
-        return;
-      }
 
       setMonths(all);
 
@@ -753,6 +761,21 @@ export default function MobileDashboard() {
 
     load();
   }, [router]);
+
+  const switchSpace = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const nextSpace = activeSpace === "family" ? "personal" : "family";
+    try {
+      if (nextSpace === "personal") await ensurePersonalSpace(currentUser);
+      await setActiveSpace(currentUser, nextSpace);
+      setShowUserMenu(false);
+      window.location.reload();
+    } catch (error) {
+      console.error("Erro ao alternar espaço:", error);
+      toast.error("Não foi possível alternar o espaço.");
+    }
+  };
 
   // 🔹 carregar dados
   useEffect(() => {
@@ -983,7 +1006,7 @@ export default function MobileDashboard() {
     );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 pb-6 flex flex-col gap-5">
+    <div data-theme={activeSpace} className="min-h-screen bg-gradient-to-b from-black to-zinc-900 text-white px-4 pb-6 flex flex-col gap-5">
 
       {showAccountMenu &&
         isSideMenuOpen && (
@@ -1100,6 +1123,13 @@ export default function MobileDashboard() {
 
           {showUserMenu && (
             <div className="absolute right-0 mt-2 min-w-36 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl p-2 z-50">
+              <button
+                onClick={switchSpace}
+                className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
+                type="button"
+              >
+                {activeSpace === "personal" ? "Família" : "Pessoal"}
+              </button>
               <button
                 onClick={openMembers}
                 className="px-4 py-2 hover:bg-zinc-800 rounded-lg w-full text-left text-sm"
