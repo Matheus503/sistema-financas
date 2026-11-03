@@ -6,7 +6,7 @@ import SearchSelect from "../../components/SearchSelect";
 
 import { useValueVisibility } from "../../hooks/useValueVisibility";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, CalendarDays, Plus, Trash2 } from "lucide-react";
@@ -50,6 +50,8 @@ import CreateAccountModal from "../../components/CreateAccountModal";
 import EditAccountModal from "../../components/EditAccountModal";
 import { useFinance } from "../../hooks/useFinance";
 import { useModalKeyboardActions } from "../../hooks/useModalKeyboardActions";
+import { getMonthlyReportData } from "../../services/monthlyReportService";
+import { buildMonthlyReport } from "../../lib/monthlyReport";
 
 const ALL_LAUNCHERS = "all";
 
@@ -117,6 +119,7 @@ export default function DashboardPage() {
   const [activeDashboardPage, setActiveDashboardPage] = useState<DashboardArea>("finances");
 
   const [months, setMonths] = useState<any[]>([]);
+  const [monthlyReportData, setMonthlyReportData] = useState<Awaited<ReturnType<typeof getMonthlyReportData>> | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [monthId, setMonthId] = useState<string | null>(null);
   const [investorCashOutflow, setInvestorCashOutflow] = useState({ scope: "", amountCents: 0 });
@@ -177,6 +180,30 @@ export default function DashboardPage() {
     getAccountValue,
     saldo,
   } = useFinance();
+
+  useEffect(() => {
+    if (!groupId) {
+      setMonthlyReportData(null);
+      return;
+    }
+    let active = true;
+    void getMonthlyReportData(groupId).then((data) => {
+      if (active) setMonthlyReportData(data);
+    }).catch((error: unknown) => {
+      console.error("Erro ao carregar os dados do saldo médio:", error);
+      if (active) setMonthlyReportData(null);
+    });
+    return () => { active = false; };
+  }, [groupId]);
+
+  const saldoMedio = useMemo(() => {
+    if (!monthlyReportData) return null;
+    return buildMonthlyReport(
+      monthlyReportData.accounts,
+      monthlyReportData.months,
+      new Date().getFullYear(),
+    ).averages.balance;
+  }, [monthlyReportData]);
 
   const investorCashScope = `${groupId}:${monthId || ""}`;
   const selectedMonthInvestorCashOutflow = investorCashOutflow.scope === investorCashScope
@@ -1319,20 +1346,29 @@ export default function DashboardPage() {
 
       {/* SALDO */}
       <div className="bg-purple-800 p-6 rounded-xl mb-6 flex items-center justify-between gap-6">
-        <div className="flex items-stretch gap-8">
-          <div>
+        <div className="flex flex-wrap items-stretch gap-4 sm:gap-8">
+          <div className="min-w-[8rem]">
             <h2 className="text-sm text-purple-100">Saldo real</h2>
             <p className="text-2xl font-bold text-white">
               {formatMoney(saldoReal)}
             </p>
           </div>
 
-          <div className="w-px bg-purple-300/30" />
+          <div className="hidden w-px bg-purple-300/30 sm:block" />
 
-          <div>
+          <div className="min-w-[8rem]">
             <h2 className="text-sm text-purple-200">Saldo previsto</h2>
             <p className="text-2xl font-bold text-purple-100">
               {formatMoney(saldoPrevisto)}
+            </p>
+          </div>
+
+          <div className="hidden w-px bg-purple-300/30 sm:block" />
+
+          <div className="min-w-[8rem]">
+            <h2 className="text-sm text-purple-200">Saldo médio</h2>
+            <p className="text-2xl font-bold text-purple-100">
+              {saldoMedio === null ? "—" : formatMoney(saldoMedio)}
             </p>
           </div>
         </div>
