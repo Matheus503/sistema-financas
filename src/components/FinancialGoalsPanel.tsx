@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Check, Plus, Target } from "lucide-react";
+import { Check, Plus, Target, Trash2 } from "lucide-react";
 import ReportDetailDialog from "./ReportDetailDialog";
 import {
   getFinancialGoalsData,
   saveFinancialGoal,
   confirmFinancialGoalContribution,
+  deleteFinancialGoal,
   type FinancialGoal,
 } from "../services/financialGoalsService";
 
@@ -50,6 +51,7 @@ export default function FinancialGoalsPanel({
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [goalToDelete, setGoalToDelete] = useState<FinancialGoal | null>(null);
   const [editingGoal, setEditingGoal] = useState<FinancialGoal | null>(null);
   const [name, setName] = useState("");
   const [targetAmount, setTargetAmount] = useState("0,00");
@@ -140,6 +142,23 @@ export default function FinancialGoalsPanel({
     }
   };
 
+  const handleDeleteGoal = async () => {
+    if (!goalToDelete) return;
+    setIsSaving(true);
+    setMessage("");
+    try {
+      await deleteFinancialGoal(groupId, userId, year, month, monthId, goalToDelete.id);
+      await refreshData();
+      setMessage(`Objetivo removido a partir de ${String(month).padStart(2, "0")}/${year}. Histórico e reservas efetivadas preservados.`);
+      setGoalToDelete(null);
+    } catch (error) {
+      console.error("Erro ao excluir objetivo financeiro:", error);
+      setMessage(error instanceof Error ? error.message : "Não foi possível excluir o objetivo.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="category-scroll max-h-[calc(100dvh-12rem)] min-h-[420px] overflow-y-auto overscroll-contain rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 pr-3 sm:p-8 sm:pr-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -190,6 +209,7 @@ export default function FinancialGoalsPanel({
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-800 pt-3">
                   <button type="button" disabled={!isReady || isSaving} onClick={() => openEditGoal(goal)} className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">Editar</button>
+                  <button type="button" disabled={!isReady || isSaving} onClick={() => setGoalToDelete(goal)} aria-label={`Excluir objetivo ${goal.name}`} title="Excluir objetivo" className="inline-flex items-center justify-center rounded-md border border-red-500/30 px-2.5 py-1.5 text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"><Trash2 size={15} aria-hidden="true" /></button>
                   <button type="button" disabled={!isReady || isSaving || goal.isConfirmedThisMonth || goal.plannedMonthlyCents <= 0} onClick={() => void confirmContribution(goal)} className={`ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${goal.isConfirmedThisMonth ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "bg-purple-600 text-white hover:bg-purple-500"}`}>
                     {goal.isConfirmedThisMonth ? <><Check size={14} /> Efetivado neste mês</> : <>Efetivar reserva · {formatMoney(goal.plannedMonthlyCents / 100)}</>}
                   </button>
@@ -202,6 +222,19 @@ export default function FinancialGoalsPanel({
       )}
 
       {message && <p role="status" className="mt-4 text-sm text-zinc-300">{message}</p>}
+
+      {goalToDelete && (
+        <ReportDetailDialog title="Excluir objetivo?" busy={isSaving} onClose={() => !isSaving && setGoalToDelete(null)}>
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-300">“{goalToDelete.name}” deixará de aparecer a partir de {String(month).padStart(2, "0")}/{year}. Os meses anteriores e as reservas já efetivadas serão preservados.</p>
+            {message && <p role="alert" className="text-sm text-red-300">{message}</p>}
+            <div className="flex justify-end gap-2 border-t border-zinc-800 pt-4">
+              <button type="button" onClick={() => setGoalToDelete(null)} disabled={isSaving} className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50">Cancelar</button>
+              <button type="button" onClick={() => void handleDeleteGoal()} disabled={isSaving} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"><Trash2 size={15} />{isSaving ? "Excluindo…" : "Excluir objetivo"}</button>
+            </div>
+          </div>
+        </ReportDetailDialog>
+      )}
 
       {isFormOpen && (
         <ReportDetailDialog title={editingGoal ? "Editar objetivo" : "Novo objetivo"} onClose={() => !isSaving && setIsFormOpen(false)} busy={isSaving}>

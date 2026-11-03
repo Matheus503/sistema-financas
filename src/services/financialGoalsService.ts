@@ -134,6 +134,7 @@ export async function getFinancialGoalsData(
     const planAt = (key: string) => plans.filter((plan) => String(plan.effectiveMonth) <= key).at(-1);
     const currentPlan = planAt(selectedKey);
     if (!currentPlan) continue;
+    if (currentPlan.status === "deleted") continue;
 
     const reservedBeforeMonthCents = getReservedBefore(goal.id, selectedKey);
     const duration = getInteger(currentPlan.durationMonths);
@@ -161,7 +162,9 @@ export async function getFinancialGoalsData(
 
   return {
     goals,
-    monthlyPlanCents: goals.reduce((total, goal) => total + goal.confirmedThisMonthCents, 0),
+    monthlyPlanCents: contributions
+      .filter((item) => item.effectiveMonth === selectedKey)
+      .reduce((total, item) => total + getInteger(item.amountCents), 0),
   };
 }
 
@@ -263,6 +266,51 @@ export async function confirmFinancialGoalContribution(
     effectiveMonth: currentKey,
     amountCents: goalData.plannedMonthlyCents,
     name: String(currentPlan.name || goal.name),
+    createdBy: userId,
+    createdAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+export async function deleteFinancialGoal(
+  groupId: string,
+  userId: string,
+  year: number,
+  month: number,
+  monthId: string,
+  goalId: string,
+) {
+  await assertMonthExists(groupId, monthId, year, month);
+  const goalRef = doc(db, "settings", goalId);
+  const goalSnapshot = await getDoc(goalRef);
+  if (!goalSnapshot.exists() || goalSnapshot.data().groupId !== groupId || goalSnapshot.data().kind !== "financialGoal") {
+    throw new Error("O objetivo não pertence ao espaço atual.");
+  }
+  const { plans } = await loadGoalSettings(groupId);
+  const effectiveMonth = getMonthKey(year, month);
+  const currentPlan = plans
+    .filter((rawPlan) => {
+      const plan = rawPlan as Record<string, unknown>;
+      return plan.goalId === goalId && typeof plan.effectiveMonth === "string" && plan.effectiveMonth <= effectiveMonth;
+    })
+    .map((rawPlan) => rawPlan as Record<string, unknown>)
+    .sort(comparePlanSnapshots)
+    .at(-1);
+  if (!currentPlan) throw new Error("O planejamento mensal do objetivo não foi encontrado.");
+  if (currentPlan.status === "deleted") throw new Error("Este objetivo já foi excluído.");
+
+  const batch = writeBatch(db);
+  batch.update(goalRef, { status: "deleted", deletedFromMonth: effectiveMonth, updatedAt: serverTimestamp() });
+  batch.set(doc(collection(db, "settings")), {
+    groupId,
+    kind: "financialGoalPlan",
+    goalId,
+    effectiveMonth,
+    name: String(currentPlan.name || goalSnapshot.data().name || "Objetivo"),
+    targetAmountCents: getInteger(currentPlan.targetAmountCents ?? goalSnapshot.data().targetAmountCents),
+    durationMonths: getInteger(currentPlan.durationMonths),
+    startingReservedCents: getInteger(currentPlan.startingReservedCents),
+    status: "deleted",
     createdBy: userId,
     createdAt: serverTimestamp(),
   });

@@ -1,17 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Pencil, Save, Settings2, Trash2, X } from "lucide-react";
+import { BarChart3, ChevronDown, ChevronUp, Pencil, Save, Settings2, Trash2, X } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   DEFAULT_INVESTOR_SETTINGS,
   deleteInvestorMovement,
   getInvestorPortfolioData,
   getInvestorSettings,
-  INVESTMENT_CATEGORIES,
   saveInvestorSettings,
   saveInvestmentPurchase,
   saveReserveMovement,
   type InvestmentCategoryId,
+  type InvestmentCategory,
   type InvestmentPurchaseCategory,
   type InvestmentTargets,
   type InvestorMovement,
@@ -35,12 +36,9 @@ type CategoryDetailScope = "month" | "cumulative";
 type EditingMovement = { id: string; type: InvestorMovement["type"]; monthId: string; year: number; month: number } | null;
 type InvestmentFormSelection = InvestmentPurchaseCategory | "reserve_deposit" | "reserve_withdrawal";
 
-const asDraftTargets = (targets: InvestmentTargets): DraftTargets => ({
-  stocks: formatPercentValue(targets.stocks),
-  fiis: formatPercentValue(targets.fiis),
-  etfs: formatPercentValue(targets.etfs),
-  opportunities: formatPercentValue(targets.opportunities),
-});
+const asDraftTargets = (targets: InvestmentTargets): DraftTargets => Object.fromEntries(
+  Object.entries(targets).map(([id, value]) => [id, formatPercentValue(value)]),
+);
 
 const parseDraft = (value: string) => {
   if (value.trim() === "") return Number.NaN;
@@ -61,13 +59,8 @@ const formatPercentTyping = (value: string) => {
   return (hundredths / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false });
 };
 
-const purchaseCategories: { id: InvestmentPurchaseCategory; label: string }[] = [
-  { id: "stocks", label: "Ações brasileiras" },
-  { id: "fiis", label: "FIIs — Fundos Imobiliários" },
-  { id: "etfs", label: "ETFs — Fundos de índice" },
-];
-
 const DISTRIBUTION_TOLERANCE_PCT = 3;
+const CHART_COLORS = ["#a855f7", "#38bdf8", "#f59e0b", "#34d399", "#f472b6", "#818cf8", "#fb7185", "#2dd4bf", "#c084fc", "#facc15"];
 type AllocationStatus = "above" | "below" | "on_target";
 const getAllocationTone = (status: AllocationStatus) => status === "above"
   ? { text: "text-red-300", border: "border-red-500/40", background: "bg-red-500/5", label: "Acima do planejado" }
@@ -76,7 +69,7 @@ const getAllocationTone = (status: AllocationStatus) => status === "above"
     : { text: "text-emerald-300", border: "border-emerald-500/40", background: "bg-emerald-500/5", label: "Na margem do planejado" };
 
 const EMPTY_PORTFOLIO_SUMMARY: InvestorPortfolioSummary = {
-  monthlyCategoryTotalsCents: { stocks: 0, fiis: 0, etfs: 0 },
+  monthlyCategoryTotalsCents: {},
   monthlyPurchasesCents: 0,
   monthlyCashOutflowCents: 0,
   reserveBalanceCents: 0,
@@ -91,6 +84,9 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
   const selectedMonth = `${year}-${String(month).padStart(2, "0")}`;
   const selectedKey = `${groupId}:${monthId}:${selectedMonth}`;
   const [monthlyPlan, setMonthlyPlan] = useState(formatCurrencyValue(DEFAULT_INVESTOR_SETTINGS.monthlyPlan));
+  const [categories, setCategories] = useState<InvestmentCategory[]>(DEFAULT_INVESTOR_SETTINGS.categories);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<InvestmentCategoryId[]>(DEFAULT_INVESTOR_SETTINGS.selectedCategoryIds);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [targets, setTargets] = useState<DraftTargets>(asDraftTargets(DEFAULT_INVESTOR_SETTINGS.targets));
   const [savedTargets, setSavedTargets] = useState<InvestmentTargets>(DEFAULT_INVESTOR_SETTINGS.targets);
   const [portfolioMovements, setPortfolioMovements] = useState<InvestorMovement[]>([]);
@@ -104,6 +100,9 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
   const [selectedCategory, setSelectedCategory] = useState<InvestmentCategoryId | null>(null);
   const [categoryDetailScope, setCategoryDetailScope] = useState<CategoryDetailScope>("month");
   const [isPlanningOpen, setIsPlanningOpen] = useState(false);
+  const [evolutionExpanded, setEvolutionExpanded] = useState(false);
+  const [isEvolutionChartOpen, setIsEvolutionChartOpen] = useState(false);
+  const [selectedChartCategoryIds, setSelectedChartCategoryIds] = useState<string[]>([]);
   const [isContributionOpen, setIsContributionOpen] = useState(false);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const [returnToCategory, setReturnToCategory] = useState<InvestmentCategoryId | null>(null);
@@ -122,6 +121,8 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
       getInvestorPortfolioData(groupId, year, month, monthId),
     ]);
     setMonthlyPlan(formatCurrencyValue(settings.monthlyPlan));
+    setCategories(settings.categories);
+    setSelectedCategoryIds(settings.selectedCategoryIds);
     setTargets(asDraftTargets(settings.targets));
     setSavedTargets(settings.targets);
     setPortfolioMovements(portfolioData.portfolioMovements);
@@ -139,6 +140,8 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
     ]).then(([settings, portfolioData]) => {
       if (!active) return;
       setMonthlyPlan(formatCurrencyValue(settings.monthlyPlan));
+      setCategories(settings.categories);
+      setSelectedCategoryIds(settings.selectedCategoryIds);
       setTargets(asDraftTargets(settings.targets));
       setSavedTargets(settings.targets);
       setPortfolioMovements(portfolioData.portfolioMovements);
@@ -155,17 +158,20 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
   }, [groupId, year, month, monthId, selectedKey, onMonthlyCashOutflowChange]);
 
   const parsedTargets = useMemo(
-    () => Object.fromEntries(
-      INVESTMENT_CATEGORIES.map(({ id }) => [id, parseDraft(targets[id])]),
-    ) as InvestmentTargets,
-    [targets],
+    () => Object.fromEntries(categories.map(({ id }) => [id, parseDraft(targets[id] || "0,00")])) as InvestmentTargets,
+    [categories, targets],
   );
-  const targetTotal = INVESTMENT_CATEGORIES.reduce(
+  const activeCategories = categories.filter((category) => category.id === "opportunities" || selectedCategoryIds.includes(category.id));
+  const purchaseCategories = activeCategories.filter((category) => category.id !== "opportunities");
+  const formPurchaseCategories = editing?.type === "purchase" && editing && !purchaseCategories.some((category) => category.id === purchaseCategory)
+    ? [...purchaseCategories, categories.find((category) => category.id === purchaseCategory)].filter((category): category is InvestmentCategory => !!category)
+    : purchaseCategories;
+  const targetTotal = activeCategories.reduce(
     (total, category) => total + (Number.isFinite(parsedTargets[category.id]) ? parsedTargets[category.id] : 0),
     0,
   );
   const parsedMonthlyPlan = parseDraft(monthlyPlan);
-  const targetsAreValid = INVESTMENT_CATEGORIES.every(({ id }) =>
+  const targetsAreValid = activeCategories.length > 0 && activeCategories.every(({ id }) =>
     Number.isFinite(parsedTargets[id]) && parsedTargets[id] >= 0 && parsedTargets[id] <= 100,
   );
   const settingsAreValid =
@@ -173,7 +179,7 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
     parsedMonthlyPlan >= 0 &&
     hasAtMostTwoDecimals(parsedMonthlyPlan) &&
     targetsAreValid &&
-    INVESTMENT_CATEGORIES.every(({ id }) => hasAtMostTwoDecimals(parsedTargets[id])) &&
+    activeCategories.every(({ id }) => hasAtMostTwoDecimals(parsedTargets[id])) &&
     Math.abs(targetTotal - 100) < 0.000001;
   const isReady = loadedKey === selectedKey && !loadError;
 
@@ -212,28 +218,65 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
     .sort((a, b) => b.year - a.year || b.month - a.month);
   const accumulatedInvestments = cumulativeMovements.reduce<InvestmentTargets>((totals, movement) => {
     if (movement.type === "purchase" && movement.category) {
-      totals[movement.category] += movement.amountCents;
+      totals[movement.category] = (totals[movement.category] || 0) + movement.amountCents;
     } else if (movement.type === "reserve" && movement.direction) {
-      totals.opportunities += movement.direction === "deposit" ? movement.amountCents : -movement.amountCents;
+      totals.opportunities = (totals.opportunities || 0) + (movement.direction === "deposit" ? movement.amountCents : -movement.amountCents);
     }
     return totals;
-  }, { stocks: 0, fiis: 0, etfs: 0, opportunities: 0 });
+  }, Object.fromEntries(categories.map((category) => [category.id, 0])) as InvestmentTargets);
+  const chartCategories = categories.filter((category) => selectedCategoryIds.includes(category.id) || (accumulatedInvestments[category.id] || 0) > 0);
+  const monthlyEvolution = (() => {
+    const monthKeys = [...new Set(cumulativeMovements.map((movement) => `${movement.year}-${String(movement.month).padStart(2, "0")}`))].sort();
+    const runningTotals: Record<string, number> = Object.fromEntries(chartCategories.map((category) => [category.id, 0]));
+    return monthKeys.map((key) => {
+      const [yearValue, monthValue] = key.split("-").map(Number);
+      const monthlyValues: Record<string, number> = Object.fromEntries(chartCategories.map((category) => [category.id, 0]));
+      for (const movement of cumulativeMovements) {
+        if (`${movement.year}-${String(movement.month).padStart(2, "0")}` !== key) continue;
+        if (movement.type === "purchase" && movement.category) {
+          monthlyValues[movement.category] = (monthlyValues[movement.category] || 0) + movement.amountCents;
+        } else if (movement.type === "reserve" && movement.direction) {
+          monthlyValues.opportunities = (monthlyValues.opportunities || 0) + (movement.direction === "deposit" ? movement.amountCents : -movement.amountCents);
+        }
+      }
+      for (const category of chartCategories) {
+        runningTotals[category.id] = (runningTotals[category.id] || 0) + (monthlyValues[category.id] || 0);
+      }
+      return {
+        monthKey: key,
+        label: `${String(monthValue).padStart(2, "0")}/${yearValue}`,
+        ...Object.fromEntries(chartCategories.map((category) => [category.id, runningTotals[category.id] || 0])),
+        ...Object.fromEntries(chartCategories.map((category) => [`monthly_${category.id}`, monthlyValues[category.id] || 0])),
+      };
+    });
+  })();
+  const currentComposition = chartCategories
+    .map((category) => ({ name: category.label, value: Math.max(0, accumulatedInvestments[category.id] || 0), id: category.id }))
+    .filter((category) => category.value > 0);
+  const selectedChartCategories = chartCategories.filter((category) => selectedChartCategoryIds.includes(category.id));
+  const selectedComposition = currentComposition.filter((category) => selectedChartCategoryIds.includes(category.id));
+  const openEvolutionCharts = () => {
+    setSelectedChartCategoryIds(chartCategories.map((category) => category.id));
+    setIsEvolutionChartOpen(true);
+  };
   const distribution = useMemo(() => {
-    const values: Record<InvestmentCategoryId, number> = {
-      stocks: 0,
-      fiis: 0,
-      etfs: 0,
-      opportunities: Math.max(0, portfolioSummary.reserveBalanceCents),
-    };
+    const categoryIds = new Set([
+      ...categories.map((category) => category.id),
+      ...portfolioMovements.filter((movement) => movement.type === "purchase" && movement.category).map((movement) => movement.category!),
+      "opportunities",
+    ]);
+    const values: Record<InvestmentCategoryId, number> = Object.fromEntries(
+      [...categoryIds].map((id) => [id, id === "opportunities" ? Math.max(0, portfolioSummary.reserveBalanceCents) : 0]),
+    );
     for (const movement of portfolioMovements) {
       const movementKey = `${movement.year}-${String(movement.month).padStart(2, "0")}`;
       if (movementKey > selectedMonth || movement.type !== "purchase" || !movement.category) continue;
-      values[movement.category] += movement.amountCents;
+      values[movement.category] = (values[movement.category] || 0) + movement.amountCents;
     }
-    const totalCents = INVESTMENT_CATEGORIES.reduce((sum, category) => sum + values[category.id], 0);
-    const rows = INVESTMENT_CATEGORIES.map((category) => {
+    const totalCents = Object.values(values).reduce((sum, value) => sum + value, 0);
+    const rows = activeCategories.map((category) => {
       const currentPct = totalCents > 0 ? values[category.id] / totalCents * 100 : 0;
-      const differencePp = currentPct - savedTargets[category.id];
+      const differencePp = currentPct - (savedTargets[category.id] || 0);
       const status = differencePp > DISTRIBUTION_TOLERANCE_PCT
         ? "above" as const
         : differencePp < -DISTRIBUTION_TOLERANCE_PCT ? "below" as const : "on_target" as const;
@@ -241,38 +284,38 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
     });
     const calculateRecommendations = (categoryValues: Record<InvestmentCategoryId, number>, budgetCents: number) => {
       const categoryTotalCents = Object.values(categoryValues).reduce((sum, value) => sum + value, 0);
-      const needs = INVESTMENT_CATEGORIES.map(({ id }) => Math.max(0, Math.round(savedTargets[id] / 100 * (categoryTotalCents + budgetCents)) - categoryValues[id]));
+      const needs = activeCategories.map(({ id }) => Math.max(0, Math.round((savedTargets[id] || 0) / 100 * (categoryTotalCents + budgetCents)) - (categoryValues[id] || 0)));
       const totalNeedCents = needs.reduce((sum, value) => sum + value, 0);
       const allocations = totalNeedCents >= budgetCents && totalNeedCents > 0
         ? needs.map((need) => budgetCents * need / totalNeedCents)
-        : needs.map((need, index) => need + Math.max(0, budgetCents - totalNeedCents) * savedTargets[INVESTMENT_CATEGORIES[index].id] / 100);
+        : needs.map((need, index) => need + Math.max(0, budgetCents - totalNeedCents) * (savedTargets[activeCategories[index].id] || 0) / 100);
       const allocatedCents = allocations.reduce((sum, value) => sum + Math.floor(value), 0);
       let remainingCents = Math.max(0, budgetCents - allocatedCents);
-      const remainderOrder = allocations.map((value, index) => ({ index, fraction: value - Math.floor(value), weight: savedTargets[INVESTMENT_CATEGORIES[index].id] }))
+      const remainderOrder = allocations.map((value, index) => ({ index, fraction: value - Math.floor(value), weight: savedTargets[activeCategories[index].id] || 0 }))
         .sort((a, b) => b.fraction - a.fraction || b.weight - a.weight);
-      const result = Object.fromEntries(INVESTMENT_CATEGORIES.map(({ id }, index) => [id, Math.floor(allocations[index])])) as Record<InvestmentCategoryId, number>;
+      const result = Object.fromEntries(activeCategories.map(({ id }, index) => [id, Math.floor(allocations[index])])) as Record<InvestmentCategoryId, number>;
       for (const remainder of remainderOrder) {
         if (remainingCents <= 0) break;
-        result[INVESTMENT_CATEGORIES[remainder.index].id] += 1;
+        result[activeCategories[remainder.index].id] += 1;
         remainingCents -= 1;
       }
       return result;
     };
     const budgetCents = Math.max(0, portfolioSummary.freeBalanceCents);
     const recommended = calculateRecommendations(values, budgetCents);
-    const previousMonthValues = {
-      stocks: Math.max(0, values.stocks - portfolioSummary.monthlyCategoryTotalsCents.stocks),
-      fiis: Math.max(0, values.fiis - portfolioSummary.monthlyCategoryTotalsCents.fiis),
-      etfs: Math.max(0, values.etfs - portfolioSummary.monthlyCategoryTotalsCents.etfs),
-      opportunities: Math.max(0, values.opportunities - portfolioSummary.monthlyReserveDepositsCents + portfolioSummary.monthlyReserveWithdrawalsCents),
-    };
+    const previousMonthValues = Object.fromEntries([...categoryIds].map((id) => [
+      id,
+      Math.max(0, (values[id] || 0) - (id === "opportunities"
+        ? portfolioSummary.monthlyReserveDepositsCents - portfolioSummary.monthlyReserveWithdrawalsCents
+        : portfolioSummary.monthlyCategoryTotalsCents[id] || 0)),
+    ]));
     const startingBudgetCents = Math.max(0,
       portfolioSummary.freeBalanceCents + portfolioSummary.monthlyPurchasesCents
         + portfolioSummary.monthlyReserveDepositsCents - portfolioSummary.monthlyReserveWithdrawalsCents,
     );
     const startingRecommendations = calculateRecommendations(previousMonthValues, startingBudgetCents);
     return { totalCents, rows, budgetCents, recommended, startingRecommendations };
-  }, [portfolioMovements, portfolioSummary.freeBalanceCents, portfolioSummary.reserveBalanceCents, portfolioSummary.monthlyCategoryTotalsCents, portfolioSummary.monthlyPurchasesCents, portfolioSummary.monthlyReserveDepositsCents, portfolioSummary.monthlyReserveWithdrawalsCents, savedTargets, selectedMonth]);
+  }, [categories, activeCategories, portfolioMovements, portfolioSummary.freeBalanceCents, portfolioSummary.reserveBalanceCents, portfolioSummary.monthlyCategoryTotalsCents, portfolioSummary.monthlyPurchasesCents, portfolioSummary.monthlyReserveDepositsCents, portfolioSummary.monthlyReserveWithdrawalsCents, savedTargets, selectedMonth]);
 
   const clearEditor = () => {
     setEditing(null);
@@ -282,7 +325,7 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
     setAdditionalCosts("0,00");
     setReserveAmount("");
     setReserveDescription("");
-    setPurchaseCategory("stocks");
+    setPurchaseCategory(purchaseCategories[0]?.id || "reserve_deposit");
     setMessage("");
     setIsContributionOpen(false);
     setReturnToCategory(null);
@@ -290,8 +333,38 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
 
   const startNewMovement = (category?: InvestmentCategoryId) => {
     clearEditor();
-    setPurchaseCategory(category ? category === "opportunities" ? "reserve_deposit" : category : "stocks");
+    setPurchaseCategory(category ? category === "opportunities" ? "reserve_deposit" : category : purchaseCategories[0]?.id || "reserve_deposit");
     setIsContributionOpen(true);
+  };
+
+  const toggleCategory = (categoryId: InvestmentCategoryId) => {
+    if (categoryId === "opportunities") return;
+    setSelectedCategoryIds((current) => current.includes(categoryId)
+      ? current.filter((id) => id !== categoryId)
+      : [...current, categoryId]);
+    setTargets((current) => current[categoryId] !== undefined
+      ? current
+      : { ...current, [categoryId]: formatPercentValue(categories.find((category) => category.id === categoryId)?.defaultTarget || 0) });
+    setMessage("");
+  };
+
+  const addCustomCategory = () => {
+    const label = newCategoryName.trim();
+    if (!label) return;
+    if (categories.some((category) => category.label.toLocaleLowerCase("pt-BR") === label.toLocaleLowerCase("pt-BR"))) {
+      setMessage("Já existe uma categoria com esse nome.");
+      return;
+    }
+    const baseId = `custom_${label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "investimento"}`;
+    let id = baseId;
+    let suffix = 2;
+    while (categories.some((category) => category.id === id)) id = `${baseId}_${suffix++}`;
+    const newCategory = { id, label };
+    setCategories((current) => [...current, newCategory]);
+    setSelectedCategoryIds((current) => [...current, id]);
+    setTargets((current) => ({ ...current, [id]: "0,00" }));
+    setNewCategoryName("");
+    setMessage("");
   };
 
   const handleSaveSettings = async (event: FormEvent<HTMLFormElement>) => {
@@ -302,6 +375,8 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
     try {
       await saveInvestorSettings(groupId, year, month, {
         monthlyPlan: parsedMonthlyPlan,
+        categories,
+        selectedCategoryIds,
         targets: parsedTargets,
       });
       await refreshData();
@@ -430,7 +505,7 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
   };
 
   return (
-    <div className="category-scroll max-h-[calc(100dvh-12rem)] min-h-[420px] overflow-y-auto overscroll-contain rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 pr-3 sm:p-8 sm:pr-6">
+    <div className={`category-scroll max-h-[calc(100dvh-12rem)] ${evolutionExpanded ? "min-h-[420px]" : "min-h-0"} overflow-y-auto overscroll-contain rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 pr-3 sm:p-8 sm:pr-6`}>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="mt-1 text-2xl font-bold">Área do investidor</h2>
@@ -455,7 +530,7 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
             const isReserveCard = row.id === "opportunities";
             const monthlyActualCents = isReserveCard
               ? portfolioSummary.monthlyReserveDepositsCents - portfolioSummary.monthlyReserveWithdrawalsCents
-              : portfolioSummary.monthlyCategoryTotalsCents[row.id];
+              : portfolioSummary.monthlyCategoryTotalsCents[row.id] || 0;
             const hasMonthlyActivity = isReserveCard
               ? portfolioSummary.monthlyReserveDepositsCents > 0 || portfolioSummary.monthlyReserveWithdrawalsCents > 0
               : monthlyActualCents > 0;
@@ -502,23 +577,114 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
         </div>
       </section>
 
-      <section aria-labelledby="investor-cumulative-title" className="mt-6 border-t border-zinc-800 pt-5">
-        <div className="mb-3">
-          <h3 id="investor-cumulative-title" className="text-base font-semibold">Evolução dos investimentos</h3>
+      <section aria-labelledby="investor-cumulative-title" className={`mt-6 ${evolutionExpanded ? "border-t border-zinc-800 pt-5" : ""}`}>
+        <div className={`flex items-center justify-between gap-3 ${evolutionExpanded ? "mb-3" : ""}`}>
+          <div className="flex min-w-0 items-center gap-2">
+            <h3 id="investor-cumulative-title" className="text-base font-semibold">Evolução dos investimentos</h3>
+            <button type="button" onClick={openEvolutionCharts} aria-label="Abrir gráficos da evolução dos investimentos" title="Ver gráficos da evolução" className="shrink-0 rounded-lg p-2 text-purple-300 transition hover:bg-purple-500/10 hover:text-purple-200 focus-visible:outline-2 focus-visible:outline-purple-400">
+              <BarChart3 size={19} aria-hidden="true" />
+            </button>
+          </div>
+          <button type="button" onClick={() => setEvolutionExpanded((expanded) => !expanded)} aria-expanded={evolutionExpanded} aria-controls="investor-evolution-cards" aria-label={evolutionExpanded ? "Minimizar evolução dos investimentos" : "Expandir evolução dos investimentos"} title={evolutionExpanded ? "Minimizar evolução dos investimentos" : "Expandir evolução dos investimentos"} className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-800 hover:text-white focus-visible:outline-2 focus-visible:outline-purple-400">
+            {evolutionExpanded ? <ChevronUp size={20} aria-hidden="true" /> : <ChevronDown size={20} aria-hidden="true" />}
+          </button>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {INVESTMENT_CATEGORIES.map((category) => {
-            const row = distribution.rows.find((item) => item.id === category.id)!;
-            const tone = getAllocationTone(row.status);
+        <div id="investor-evolution-cards" className={evolutionExpanded ? "grid grid-cols-2 gap-2 sm:grid-cols-4" : "hidden"}>
+          {categories.filter((category) => selectedCategoryIds.includes(category.id) || (accumulatedInvestments[category.id] || 0) > 0).map((category) => {
+            const cumulativeTotal = Object.values(accumulatedInvestments).reduce((total, amount) => total + amount, 0);
+            const cumulativePct = cumulativeTotal > 0 ? (accumulatedInvestments[category.id] || 0) / cumulativeTotal * 100 : 0;
+            const difference = cumulativePct - (savedTargets[category.id] || 0);
+            const tone = getAllocationTone(difference > DISTRIBUTION_TOLERANCE_PCT ? "above" : difference < -DISTRIBUTION_TOLERANCE_PCT ? "below" : "on_target");
             return <button key={category.id} type="button" aria-pressed={isCategoryDialogOpen && selectedCategory === category.id && categoryDetailScope === "cumulative"} onClick={() => { setSelectedCategory(category.id); setCategoryDetailScope("cumulative"); setIsCategoryDialogOpen(true); }} className={`min-w-0 cursor-pointer rounded-xl border p-3 text-left transition duration-150 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 hover:ring-1 hover:ring-white/20 focus-visible:outline-2 focus-visible:outline-purple-400 sm:p-4 ${tone.border} ${tone.background}`}>
               <span className="block truncate text-xs text-zinc-400">{category.label}</span>
-              <span className="mt-1 block truncate text-base font-semibold tabular-nums text-white sm:text-lg">{displaySummaryMoney(accumulatedInvestments[category.id])}</span>
-              <span className={`mt-1 block truncate text-[11px] font-medium ${tone.text}`}>{row.currentPct.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% - {tone.label}</span>
+              <span className="mt-1 block truncate text-base font-semibold tabular-nums text-white sm:text-lg">{displaySummaryMoney(accumulatedInvestments[category.id] || 0)}</span>
+              <span className={`mt-1 block truncate text-[11px] font-medium ${tone.text}`}>{cumulativePct.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% - {tone.label}</span>
               {category.id === "opportunities" && <span className="mt-1 block truncate text-[11px] text-zinc-500">Aportes menos utilizações desde o início</span>}
             </button>;
           })}
         </div>
       </section>
+
+      {isEvolutionChartOpen && (
+        <ReportDetailDialog title="Evolução dos investimentos" busy={false} onClose={() => setIsEvolutionChartOpen(false)}>
+          <div className="category-scroll max-h-[78dvh] space-y-4 overflow-y-auto overscroll-contain pr-2">
+            {chartCategories.length > 0 && (
+              <fieldset className="rounded-xl border border-zinc-800 bg-black/20 p-3 sm:p-4">
+                <div className="mb-2 flex justify-end">
+                  <button type="button" onClick={() => setSelectedChartCategoryIds(chartCategories.map((category) => category.id))} className="text-xs font-medium text-purple-300 hover:text-purple-200">Selecionar todas</button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {chartCategories.map((category, index) => (
+                    <label key={category.id} className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-200">
+                      <input type="checkbox" checked={selectedChartCategoryIds.includes(category.id)} onChange={() => setSelectedChartCategoryIds((current) => current.includes(category.id) ? current.filter((id) => id !== category.id) : [...current, category.id])} className="accent-purple-500" />
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} aria-hidden="true" />
+                      {category.label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            {monthlyEvolution.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-zinc-700 bg-black/20 p-8 text-center text-sm text-zinc-400">Registre seus primeiros aportes para ver a evolução em gráficos.</div>
+            ) : selectedChartCategories.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-zinc-700 bg-black/20 p-8 text-center text-sm text-zinc-400">Selecione ao menos uma categoria para exibir os gráficos.</div>
+            ) : (
+              <>
+                <section className="rounded-xl border border-zinc-800 bg-black/20 p-3 sm:p-4">
+                  <h3 className="mb-3 text-sm font-semibold">Total acumulado por categoria</h3>
+                  <div className="h-64 w-full sm:h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={monthlyEvolution} margin={{ top: 8, right: 12, left: 8, bottom: 0 }}>
+                        <CartesianGrid stroke="#3f3f46" strokeDasharray="3 3" />
+                        <XAxis dataKey="label" stroke="#a1a1aa" tick={{ fontSize: 10 }} />
+                        <YAxis stroke="#a1a1aa" tick={{ fontSize: 10 }} tickFormatter={(value) => formatMoney(Number(value) / 100)} width={82} />
+                        <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 10, color: "#fff" }} formatter={(value, name) => [formatMoney(Number(value) / 100), String(name)]} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        {selectedChartCategories.map((category) => { const colorIndex = chartCategories.findIndex((item) => item.id === category.id); return <Line key={category.id} type="monotone" dataKey={category.id} name={category.label} stroke={CHART_COLORS[colorIndex % CHART_COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />; })}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <section className="rounded-xl border border-zinc-800 bg-black/20 p-3 sm:p-4">
+                    <h3 className="mb-3 text-sm font-semibold">Aportes registrados por mês</h3>
+                    <div className="h-60 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={monthlyEvolution} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                          <CartesianGrid stroke="#3f3f46" strokeDasharray="3 3" />
+                          <XAxis dataKey="label" stroke="#a1a1aa" tick={{ fontSize: 9 }} />
+                          <YAxis stroke="#a1a1aa" tick={{ fontSize: 10 }} tickFormatter={(value) => formatMoney(Number(value) / 100)} width={76} />
+                          <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 10, color: "#fff" }} formatter={(value, name) => [formatMoney(Number(value) / 100), String(name)]} />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          {selectedChartCategories.map((category) => { const colorIndex = chartCategories.findIndex((item) => item.id === category.id); return <Bar key={category.id} dataKey={`monthly_${category.id}`} name={category.label} fill={CHART_COLORS[colorIndex % CHART_COLORS.length]} stackId="monthly" />; })}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </section>
+
+                  <section className="rounded-xl border border-zinc-800 bg-black/20 p-3 sm:p-4">
+                    <h3 className="mb-3 text-sm font-semibold">Distribuição acumulada</h3>
+                    {selectedComposition.length === 0 ? <p className="py-16 text-center text-xs text-zinc-500">Sem valores acumulados nas categorias selecionadas.</p> : (
+                      <div className="h-60 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={selectedComposition} dataKey="value" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2}>
+                              {selectedComposition.map((item) => { const colorIndex = chartCategories.findIndex((category) => category.id === item.id); return <Cell key={item.id} fill={CHART_COLORS[colorIndex % CHART_COLORS.length]} />; })}
+                            </Pie>
+                            <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 10, color: "#fff" }} formatter={(value) => formatMoney(Number(value) / 100)} />
+                            <Legend wrapperStyle={{ fontSize: 10 }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </section>
+                </div>
+              </>
+            )}
+          </div>
+        </ReportDetailDialog>
+      )}
 
       {isContributionOpen && <ReportDetailDialog title={editing ? "Editar movimentação" : "Registrar aporte"} busy={isSaving} onClose={closeContributionDialog}>
       <div className="mb-4 text-sm text-zinc-400">Referência: {String(editing?.month ?? month).padStart(2, "0")}/{editing?.year ?? year}</div>
@@ -531,7 +697,7 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
           <label className="block">
             <span className="mb-1 block text-xs font-semibold text-zinc-400">Categoria</span>
             <select value={purchaseCategory} onChange={(event) => { setPurchaseCategory(event.target.value as InvestmentFormSelection); setMessage(""); }} disabled={!isReady || isSaving || !!editing} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white outline-none focus:border-purple-400">
-              {purchaseCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
+              {formPurchaseCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
               <optgroup label="Reserva de oportunidades">
                 <option value="reserve_deposit">Aporte na reserva</option>
                 <option value="reserve_withdrawal">Utilização da reserva</option>
@@ -583,7 +749,7 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
 
       {isCategoryDialogOpen && selectedCategory && (
         <ReportDetailDialog
-          title={INVESTMENT_CATEGORIES.find((category) => category.id === selectedCategory)?.label || "Investimentos"}
+          title={categories.find((category) => category.id === selectedCategory)?.label || "Investimentos"}
           busy={isSaving}
           onClose={closeCategoryDialog}
         >
@@ -594,7 +760,9 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
           {categoryMovements.length === 0 ? (
             <div className="rounded-xl border border-dashed border-zinc-700 bg-black/20 p-6 text-center">
               <p className="text-sm text-zinc-400">Ainda não há investimentos nesta categoria.</p>
-              <button type="button" onClick={() => { const category = selectedCategory; closeCategoryDialog(); startNewMovement(category); }} className="mt-3 text-sm font-semibold text-purple-300 hover:text-purple-200">Registrar nesta categoria</button>
+              {selectedCategory === "opportunities" || selectedCategoryIds.includes(selectedCategory)
+                ? <button type="button" onClick={() => { const category = selectedCategory; closeCategoryDialog(); startNewMovement(category); }} className="mt-3 text-sm font-semibold text-purple-300 hover:text-purple-200">Registrar nesta categoria</button>
+                : <p className="mt-3 text-xs text-zinc-500">Selecione esta categoria no planejamento mensal para registrar novos aportes.</p>}
             </div>
           ) : (
             <div className="category-scroll max-h-[60dvh] space-y-2 overflow-y-auto overscroll-contain pr-2">
@@ -651,12 +819,31 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
               <div className="flex items-center rounded-lg border border-zinc-700 bg-zinc-950 focus-within:border-purple-400"><span className="pl-3 text-sm text-zinc-400">R$</span><input type="tel" inputMode="decimal" value={monthlyPlan} onChange={(event) => { setMonthlyPlan(formatCurrencyTyping(event.target.value)); setMessage(""); }} className="w-full bg-transparent px-3 py-2.5 text-white outline-none" aria-label="Aporte mensal planejado em reais" disabled={!isReady || isSaving} /></div>
             </label>
             <div>
+              <div className="mb-2">
+                <h3 className="text-sm font-semibold text-zinc-200">Tipos de investimento</h3>
+                <p className="mt-1 text-xs text-zinc-500">Selecione as categorias que farão parte do seu planejamento.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {categories.map((category) => (
+                  <label key={category.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-200">
+                    <input type="checkbox" checked={category.id === "opportunities" || selectedCategoryIds.includes(category.id)} onChange={() => toggleCategory(category.id)} disabled={!isReady || isSaving || category.id === "opportunities"} className="accent-purple-500" />
+                    <span>{category.label}{category.id === "opportunities" ? " · sempre incluída" : ""}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <input value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} maxLength={40} placeholder="Adicionar outro tipo de investimento" disabled={!isReady || isSaving} className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-purple-400" />
+                <button type="button" onClick={addCustomCategory} disabled={!isReady || isSaving || !newCategoryName.trim()} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">Adicionar</button>
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">A Reserva de oportunidades permanece incluída. O percentual das categorias selecionadas deve somar 100%; categorias desmarcadas deixam de receber sugestões a partir deste mês.</p>
+            </div>
+            <div>
               <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
                 <div><h3 className="text-sm font-semibold text-zinc-200">Percentual desejado por categoria</h3><p className="mt-1 text-xs text-zinc-500">A soma precisa ser exatamente 100%.</p></div>
                 <span className={`text-sm font-semibold tabular-nums ${Math.abs(targetTotal - 100) < 0.000001 ? "text-emerald-300" : "text-amber-300"}`}>Total: {Number.isFinite(targetTotal) ? targetTotal.toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : "—"}%</span>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {INVESTMENT_CATEGORIES.map((category) => {
+                {activeCategories.map((category) => {
                   const percent = parsedTargets[category.id];
                   const plannedAmount = Number.isFinite(percent) && Number.isFinite(parsedMonthlyPlan) ? parsedMonthlyPlan * percent / 100 : 0;
                   return <label key={category.id} className="rounded-lg border border-zinc-800 bg-zinc-950 p-3"><span className="mb-2 block text-xs font-medium text-zinc-300">{category.label}</span><div className="flex items-center gap-2"><input type="tel" inputMode="decimal" value={targets[category.id]} onChange={(event) => { setTargets((current) => ({ ...current, [category.id]: formatPercentTyping(event.target.value) })); setMessage(""); }} className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-2 py-2 text-right text-sm text-white outline-none focus:border-purple-400" aria-label={`${category.label}, percentual desejado`} disabled={!isReady || isSaving} /><span className="text-xs text-zinc-400">%</span><span className="min-w-20 text-right text-[11px] tabular-nums text-zinc-500">{formatMoney(plannedAmount)}</span></div></label>;
@@ -665,7 +852,7 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
             </div>
             <div className="flex flex-wrap items-center gap-3 border-t border-zinc-800 pt-4">
               <button type="submit" disabled={!isReady || !settingsAreValid || isSaving} className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50"><Save size={16} /> Salvar planejamento</button>
-              {!settingsAreValid && isReady && <p role="alert" className="text-xs text-amber-300">Informe valores não negativos e ajuste os percentuais para totalizar 100%.</p>}
+              {!settingsAreValid && isReady && <p role="alert" className="text-xs text-amber-300">Selecione ao menos uma categoria e ajuste os percentuais selecionados para totalizar 100%.</p>}
               {(message.startsWith("Planejamento") || message.startsWith("Não foi possível salvar o planejamento")) && <p role={message.startsWith("Não foi") ? "alert" : "status"} className="text-xs text-zinc-300">{message}</p>}
             </div>
           </form>

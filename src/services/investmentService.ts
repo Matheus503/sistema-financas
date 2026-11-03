@@ -16,18 +16,27 @@ export const INVESTMENT_CATEGORIES = [
   { id: "stocks", label: "Ações brasileiras", defaultTarget: 30 },
   { id: "fiis", label: "FIIs — Fundos Imobiliários", defaultTarget: 25 },
   { id: "etfs", label: "ETFs — Fundos de índice", defaultTarget: 25 },
+  { id: "fixed_income", label: "Renda fixa", defaultTarget: 0 },
+  { id: "treasury", label: "Tesouro Direto", defaultTarget: 0 },
+  { id: "bdrs", label: "BDRs", defaultTarget: 0 },
+  { id: "crypto", label: "Criptomoedas", defaultTarget: 0 },
+  { id: "funds", label: "Fundos de investimento", defaultTarget: 0 },
+  { id: "pension", label: "Previdência privada", defaultTarget: 0 },
   { id: "opportunities", label: "Reserva de oportunidades", defaultTarget: 20 },
 ] as const;
 
-export type InvestmentCategoryId = (typeof INVESTMENT_CATEGORIES)[number]["id"];
+export type InvestmentCategoryId = string;
+export type InvestmentCategory = { id: InvestmentCategoryId; label: string; defaultTarget?: number };
 export type InvestmentTargets = Record<InvestmentCategoryId, number>;
 
 export type InvestorSettings = {
   monthlyPlan: number;
+  categories: InvestmentCategory[];
+  selectedCategoryIds: InvestmentCategoryId[];
   targets: InvestmentTargets;
 };
 
-export type InvestmentPurchaseCategory = Exclude<InvestmentCategoryId, "opportunities">;
+export type InvestmentPurchaseCategory = string;
 export type InvestorMovement = {
   id: string;
   type: "purchase" | "reserve" | "contribution";
@@ -73,6 +82,8 @@ export type ReserveMovementInput = {
 
 export const DEFAULT_INVESTOR_SETTINGS: InvestorSettings = {
   monthlyPlan: 1000,
+  categories: INVESTMENT_CATEGORIES.map((category) => ({ ...category })),
+  selectedCategoryIds: ["stocks", "fiis", "etfs", "opportunities"],
   targets: {
     stocks: 30,
     fiis: 25,
@@ -108,14 +119,24 @@ export async function getInvestorSettings(
 
   if (!applicable) return DEFAULT_INVESTOR_SETTINGS;
 
+  const configuredCategories = Array.isArray(applicable.categories)
+    ? applicable.categories.filter((category: unknown): category is InvestmentCategory => !!category && typeof category === "object" && typeof (category as InvestmentCategory).id === "string" && typeof (category as InvestmentCategory).label === "string")
+    : [];
+  const categories = [...new Map(
+    [...DEFAULT_INVESTOR_SETTINGS.categories, ...configuredCategories].map((category) => [category.id, category]),
+  ).values()];
+  const configuredIds = Array.isArray(applicable.selectedCategoryIds)
+    ? applicable.selectedCategoryIds.filter((id: unknown): id is string => typeof id === "string")
+    : DEFAULT_INVESTOR_SETTINGS.selectedCategoryIds;
+  const selectedCategoryIds = [...new Set([...configuredIds, "opportunities"])];
+
   return {
     monthlyPlan: Number(applicable.monthlyPlan),
-    targets: {
-      stocks: Number(applicable.targets?.stocks),
-      fiis: Number(applicable.targets?.fiis),
-      etfs: Number(applicable.targets?.etfs),
-      opportunities: Number(applicable.targets?.opportunities),
-    },
+    categories,
+    selectedCategoryIds,
+    targets: Object.fromEntries(
+      categories.map((category) => [category.id, Number(applicable.targets?.[category.id] ?? category.defaultTarget ?? 0)]),
+    ),
   };
 }
 
@@ -131,6 +152,8 @@ export async function saveInvestorSettings(
     kind: "investor",
     effectiveMonth,
     monthlyPlan: settings.monthlyPlan,
+    categories: settings.categories,
+    selectedCategoryIds: settings.selectedCategoryIds,
     targets: settings.targets,
     updatedAt: serverTimestamp(),
   });
@@ -185,7 +208,7 @@ export async function getInvestorPortfolioData(
     .map((item) => ({ effectiveMonth: String(item.effectiveMonth), monthlyPlan: Number(item.monthlyPlan) || 0 }))
     .sort((a, b) => a.effectiveMonth.localeCompare(b.effectiveMonth));
   const summary: InvestorPortfolioSummary = {
-    monthlyCategoryTotalsCents: { stocks: 0, fiis: 0, etfs: 0 },
+    monthlyCategoryTotalsCents: {},
     monthlyPurchasesCents: 0,
     monthlyCashOutflowCents: 0,
     reserveBalanceCents: 0,
@@ -257,8 +280,8 @@ export async function getInvestorPortfolioData(
         const fundedFromReserveCents = Math.min(reserveFundedPurchaseBalanceCents, movement.amountCents);
         reserveFundedPurchaseBalanceCents -= fundedFromReserveCents;
         monthlyCashOutflowCents += movement.amountCents - fundedFromReserveCents;
-        if (ledgerMonth.id === monthId && (movement.category === "stocks" || movement.category === "fiis" || movement.category === "etfs")) {
-          summary.monthlyCategoryTotalsCents[movement.category] += movement.amountCents;
+        if (ledgerMonth.id === monthId && movement.category) {
+          summary.monthlyCategoryTotalsCents[movement.category] = (summary.monthlyCategoryTotalsCents[movement.category] || 0) + movement.amountCents;
           summary.monthlyPurchasesCents += movement.amountCents;
         }
       } else if (movement.type === "reserve") {
@@ -289,8 +312,7 @@ export async function getInvestorPortfolioData(
 }
 
 const validatePurchase = (purchase: InvestmentPurchaseInput) => {
-  const validCategories: InvestmentPurchaseCategory[] = ["stocks", "fiis", "etfs"];
-  if (!validCategories.includes(purchase.category)) throw new Error("Categoria de compra inválida.");
+  if (!purchase.category || purchase.category === "opportunities") throw new Error("Categoria de compra inválida.");
   if (!purchase.asset.trim()) throw new Error("Informe o código do ativo.");
   if (!Number.isFinite(purchase.quantity) || purchase.quantity <= 0 || Math.abs(purchase.quantity * 1000 - Math.round(purchase.quantity * 1000)) > 0.000001) throw new Error("A quantidade deve ser maior que zero e ter no máximo três casas decimais.");
   if (!Number.isInteger(purchase.unitPriceCents) || purchase.unitPriceCents <= 0) throw new Error("O preço unitário deve ser maior que zero.");
@@ -309,6 +331,8 @@ export async function saveInvestmentPurchase(
 ) {
   const amountCents = validatePurchase(purchase);
   await assertMonthExists(groupId, monthId, year, month);
+  const settings = await getInvestorSettings(groupId, year, month);
+  if (!settings.selectedCategoryIds.includes(purchase.category)) throw new Error("Esta categoria não está selecionada no planejamento do mês.");
   const data = {
     groupId,
     kind: "investor",
