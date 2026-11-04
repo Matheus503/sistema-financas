@@ -57,6 +57,7 @@ export type InvestorPortfolioSummary = {
   monthlyCategoryTotalsCents: Record<InvestmentPurchaseCategory, number>;
   monthlyPurchasesCents: number;
   monthlyCashOutflowCents: number;
+  monthlyBalanceImpactCents: number;
   reserveBalanceCents: number;
   monthlyReserveDepositsCents: number;
   monthlyReserveWithdrawalsCents: number;
@@ -211,6 +212,7 @@ export async function getInvestorPortfolioData(
     monthlyCategoryTotalsCents: {},
     monthlyPurchasesCents: 0,
     monthlyCashOutflowCents: 0,
+    monthlyBalanceImpactCents: 0,
     reserveBalanceCents: 0,
     monthlyReserveDepositsCents: 0,
     monthlyReserveWithdrawalsCents: 0,
@@ -263,6 +265,7 @@ export async function getInvestorPortfolioData(
   let reserveFundedPurchaseBalanceCents = 0;
 
   for (const ledgerMonth of trackedMonths) {
+    const freeBalanceBeforeMonthCents = freeBalanceCents;
     const applicablePlans = plans.filter((item) => item.effectiveMonth <= ledgerMonth.key);
     const plan = applicablePlans[applicablePlans.length - 1];
     const monthlyPlanCents = Math.round((plan?.monthlyPlan ?? DEFAULT_INVESTOR_SETTINGS.monthlyPlan) * 100);
@@ -299,6 +302,7 @@ export async function getInvestorPortfolioData(
     if (ledgerMonth.id === monthId) {
       summary.availableBalanceCents = freeBalanceCents;
       summary.monthlyCashOutflowCents = monthlyCashOutflowCents;
+      summary.monthlyBalanceImpactCents = monthlyCashOutflowCents + freeBalanceCents - freeBalanceBeforeMonthCents;
     }
   }
 

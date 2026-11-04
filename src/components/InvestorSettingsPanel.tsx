@@ -72,6 +72,7 @@ const EMPTY_PORTFOLIO_SUMMARY: InvestorPortfolioSummary = {
   monthlyCategoryTotalsCents: {},
   monthlyPurchasesCents: 0,
   monthlyCashOutflowCents: 0,
+  monthlyBalanceImpactCents: 0,
   reserveBalanceCents: 0,
   monthlyReserveDepositsCents: 0,
   monthlyReserveWithdrawalsCents: 0,
@@ -127,7 +128,7 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
     setSavedTargets(settings.targets);
     setPortfolioMovements(portfolioData.portfolioMovements);
     setPortfolioSummary(portfolioData.summary);
-    onMonthlyCashOutflowChange?.(portfolioData.summary.monthlyCashOutflowCents);
+    onMonthlyCashOutflowChange?.(portfolioData.summary.monthlyBalanceImpactCents);
     setLoadedKey(selectedKey);
     setLoadError("");
   }, [groupId, year, month, monthId, selectedKey, onMonthlyCashOutflowChange]);
@@ -146,7 +147,7 @@ export default function InvestorSettingsPanel({ groupId, userId, monthId, year, 
       setSavedTargets(settings.targets);
       setPortfolioMovements(portfolioData.portfolioMovements);
       setPortfolioSummary(portfolioData.summary);
-      onMonthlyCashOutflowChange?.(portfolioData.summary.monthlyCashOutflowCents);
+      onMonthlyCashOutflowChange?.(portfolioData.summary.monthlyBalanceImpactCents);
       setLoadedKey(selectedKey);
       setLoadError("");
     }).catch((error: unknown) => {
