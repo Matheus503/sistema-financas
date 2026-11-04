@@ -112,10 +112,23 @@ export async function getFinancialGoalsData(
     .filter((item) => item.key <= selectedKey)
     .sort((a, b) => a.key.localeCompare(b.key));
   const contributions = settings.contributions as Array<Record<string, unknown>>;
-  const getReservedBefore = (goalId: string, beforeKey: string) => contributions
+  const activeContributions = contributions.filter((item) => {
+    if (item.status === "reversed") return false;
+    const goalPlans = settings.plans
+      .filter((rawPlan) => {
+        const plan = rawPlan as Record<string, unknown>;
+        return plan.goalId === item.goalId
+          && typeof plan.effectiveMonth === "string"
+          && plan.effectiveMonth <= String(item.effectiveMonth || "");
+      })
+      .map((rawPlan) => rawPlan as Record<string, unknown> & { id: string })
+      .sort(comparePlanSnapshots);
+    return goalPlans.at(-1)?.status !== "deleted";
+  });
+  const getReservedBefore = (goalId: string, beforeKey: string) => activeContributions
     .filter((item) => item.goalId === goalId && typeof item.effectiveMonth === "string" && item.effectiveMonth < beforeKey)
     .reduce((total, item) => total + getInteger(item.amountCents), 0);
-  const getContributionThisMonth = (goalId: string) => contributions
+  const getContributionThisMonth = (goalId: string) => activeContributions
     .filter((item) => item.goalId === goalId && item.effectiveMonth === selectedKey)
     .reduce((total, item) => total + getInteger(item.amountCents), 0);
 
@@ -162,7 +175,7 @@ export async function getFinancialGoalsData(
 
   return {
     goals,
-    monthlyPlanCents: contributions
+    monthlyPlanCents: activeContributions
       .filter((item) => item.effectiveMonth === selectedKey)
       .reduce((total, item) => total + getInteger(item.amountCents), 0),
   };
@@ -286,7 +299,7 @@ export async function deleteFinancialGoal(
   if (!goalSnapshot.exists() || goalSnapshot.data().groupId !== groupId || goalSnapshot.data().kind !== "financialGoal") {
     throw new Error("O objetivo não pertence ao espaço atual.");
   }
-  const { plans } = await loadGoalSettings(groupId);
+  const { plans, contributions } = await loadGoalSettings(groupId);
   const effectiveMonth = getMonthKey(year, month);
   const currentPlan = plans
     .filter((rawPlan) => {
@@ -300,6 +313,21 @@ export async function deleteFinancialGoal(
   if (currentPlan.status === "deleted") throw new Error("Este objetivo já foi excluído.");
 
   const batch = writeBatch(db);
+  contributions
+    .filter((rawContribution) => {
+      const contribution = rawContribution as Record<string, unknown> & { id: string };
+      return contribution.goalId === goalId
+        && contribution.effectiveMonth === effectiveMonth
+        && contribution.status !== "reversed";
+    })
+    .forEach((rawContribution) => {
+      const contribution = rawContribution as Record<string, unknown> & { id: string };
+      batch.update(doc(db, "settings", contribution.id), {
+        status: "reversed",
+        reversedAt: serverTimestamp(),
+        reversedBy: userId,
+      });
+    });
   batch.update(goalRef, { status: "deleted", deletedFromMonth: effectiveMonth, updatedAt: serverTimestamp() });
   batch.set(doc(collection(db, "settings")), {
     groupId,
