@@ -271,6 +271,10 @@ export async function getInvestorPortfolioData(
     const monthlyPlanCents = Math.round((plan?.monthlyPlan ?? DEFAULT_INVESTOR_SETTINGS.monthlyPlan) * 100);
     freeBalanceCents += monthlyPlanCents;
     const monthMovements = portfolioMovements.filter((movement) => movement.monthId === ledgerMonth.id);
+    const hasInvestmentActivity = monthMovements.some((movement) =>
+      (movement.type === "purchase" && Boolean(movement.category))
+      || (movement.type === "reserve" && movement.direction === "deposit"),
+    );
     reserveFundedPurchaseBalanceCents += monthMovements
       .filter((movement) => movement.type === "reserve" && movement.direction === "withdrawal")
       .reduce((total, movement) => total + movement.amountCents, 0);
@@ -302,7 +306,10 @@ export async function getInvestorPortfolioData(
     if (ledgerMonth.id === monthId) {
       summary.availableBalanceCents = freeBalanceCents;
       summary.monthlyCashOutflowCents = monthlyCashOutflowCents;
-      summary.monthlyBalanceImpactCents = monthlyCashOutflowCents + freeBalanceCents - freeBalanceBeforeMonthCents;
+      const availableBalanceChangeCents = hasInvestmentActivity
+        ? freeBalanceCents - freeBalanceBeforeMonthCents
+        : 0;
+      summary.monthlyBalanceImpactCents = monthlyCashOutflowCents + availableBalanceChangeCents;
     }
   }
 
