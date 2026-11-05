@@ -76,11 +76,11 @@ export function useFinance() {
 
   const saldo = useMemo(() => {
     const credits = accounts
-      .filter((a) => a.type === "CREDIT" && a.isPaid)
+      .filter((a) => a.type === "CREDIT")
       .reduce((sum, acc) => sum + getAccountValue(acc), 0);
 
     const expenses = accounts
-      .filter((a) => (a.type === "FIXED" || a.type === "VARIABLE") && a.isPaid)
+      .filter((a) => a.type !== "CREDIT")
       .reduce((sum, acc) => sum + getAccountValue(acc), 0);
 
     return credits - expenses;
