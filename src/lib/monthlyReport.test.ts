@@ -8,7 +8,7 @@ const account = (overrides: Partial<SettledAccount> = {}): SettledAccount => ({
 });
 
 test("includes zero-activity months and excludes current and future months from averages", () => {
-  const result = buildMonthlyReport([account(), account({ paidOn: "2026-03-10", value: 3000 })], [{ year: 2026, month: 1 }], 2026, "2026-03-15");
+  const result = buildMonthlyReport([account(), account({ sourceMonth: 3, paidOn: "2026-03-10", value: 3000 })], [{ year: 2026, month: 1 }], 2026, "2026-03-15");
   assert.equal(result.count, 2);
   assert.equal(result.averages.received, 3000);
   assert.equal(result.totals.received, 9000);
@@ -17,13 +17,12 @@ test("includes zero-activity months and excludes current and future months from 
   assert.equal(result.rows.some(row => row.month === 4), false);
 });
 
-test("uses settlement date even when the source bill belongs to another year", () => {
+test("keeps receipts and payments in the source month when confirmation day differs", () => {
   const a = account({ type: "FIXED", value: 1200, sourceYear: 2025, sourceMonth: 12, paidOn: "2026-02-03" });
   const result = buildMonthlyReport([a], [{ year: 2025, month: 12 }], 2026, "2026-04-01");
   assert.equal(result.rows[0].paid, 0);
-  assert.equal(result.rows[1].fixed, 1200);
-  assert.equal(result.averages.paid, 400);
-  assert.equal(buildMonthlyReport([a], [{ year: 2025, month: 12 }], 2025, "2026-04-01").totals.paid, 0);
+  assert.equal(result.totals.paid, 0);
+  assert.equal(buildMonthlyReport([a], [{ year: 2025, month: 12 }], 2025, "2026-04-01").rows[11].fixed, 1200);
 });
 
 test("legacy confirmations use their source month and are identified", () => {
@@ -50,9 +49,25 @@ test("sums fixed and variable payments in cents and preserves refunds", () => {
   assert.equal(result.rows[0].balance, .75);
 });
 
-test("future confirmations are not realized cash flow", () => {
+test("subtracts investments and confirmed goal contributions from the balance", () => {
+  const result = buildMonthlyReport([
+    account({ value: 6000 }),
+    account({ accountId: "fixed", type: "FIXED", value: 1200 }),
+    account({ accountId: "variable", type: "VARIABLE", value: 800 }),
+  ], [{ year: 2026, month: 1 }], 2026, "2026-02-01", {
+    "2026-01": { investmentCents: 100000, goalContributionCents: 50000 },
+  });
+  assert.equal(result.rows[0].paid, 2000);
+  assert.equal(result.rows[0].investment, 1000);
+  assert.equal(result.rows[0].goalContribution, 500);
+  assert.equal(result.rows[0].balance, 2500);
+  assert.equal(result.averages.balance, 2500);
+});
+
+test("does not move an account to another month based on its confirmation day", () => {
   const result = buildMonthlyReport([account({ paidOn: "2026-09-30" })], [{ year: 2026, month: 1 }], 2026, "2026-09-24");
-  assert.equal(result.totals.received, 0);
+  assert.equal(result.rows[0].received, 6000);
+  assert.equal(result.rows.some(row => row.month === 9), false);
 });
 
 test("validates calendar dates including leap years", () => {
@@ -85,7 +100,7 @@ test("current month appears only with an effective nonzero receipt or payment", 
   const report = (accounts: SettledAccount[]) => buildMonthlyReport(accounts, months, 2026, "2026-10-05");
   assert.equal(report([]).rows.some(row => row.month === 10), false);
   assert.equal(report([account({ paidOn: "2026-10-01", value: 0 })]).rows.some(row => row.month === 10), false);
-  const result = report([account({ paidOn: "2026-10-01", value: 1500 })]);
+  const result = report([account({ paidOn: "2026-11-05", sourceMonth: 10, value: 1500 })]);
   assert.equal(result.rows.find(row => row.month === 10)?.status, "current");
   assert.equal(result.rows.find(row => row.month === 10)?.received, 1500);
   assert.equal(result.count, 9);

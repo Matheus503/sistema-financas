@@ -93,6 +93,27 @@ const loadGoalSettings = async (groupId: string) => {
   return { goals, plans, contributions };
 };
 
+export async function getFinancialGoalContributionsByMonth(groupId: string) {
+  const settings = await loadGoalSettings(groupId);
+  const totals = new Map<string, number>();
+  const activeContributions = (settings.contributions as Array<Record<string, unknown>>).filter((item) => {
+    if (item.status === "reversed") return false;
+    const effectiveMonth = String(item.effectiveMonth || "");
+    const goalPlans = (settings.plans as unknown as Array<Record<string, unknown>>)
+      .filter((plan) => plan.goalId === item.goalId && typeof plan.effectiveMonth === "string" && plan.effectiveMonth <= effectiveMonth)
+      .sort(comparePlanSnapshots);
+    return goalPlans.at(-1)?.status !== "deleted";
+  });
+
+  for (const contribution of activeContributions) {
+    const effectiveMonth = String(contribution.effectiveMonth || "");
+    if (!/^\d{4}-\d{2}$/.test(effectiveMonth)) continue;
+    totals.set(effectiveMonth, (totals.get(effectiveMonth) || 0) + getInteger(contribution.amountCents));
+  }
+
+  return totals;
+}
+
 export async function getFinancialGoalsData(
   groupId: string,
   year: number,
@@ -101,16 +122,7 @@ export async function getFinancialGoalsData(
 ): Promise<{ goals: FinancialGoal[]; monthlyPlanCents: number }> {
   await assertMonthExists(groupId, monthId, year, month);
   const selectedKey = getMonthKey(year, month);
-  const [settings, monthsSnapshot] = await Promise.all([
-    loadGoalSettings(groupId),
-    getDocs(query(collection(db, "months"), where("groupId", "==", groupId))),
-  ]);
-  const monthRecords = monthsSnapshot.docs
-    .map((item) => ({ id: item.id, year: Number(item.data().year), month: Number(item.data().month) }))
-    .filter((item) => Number.isInteger(item.year) && item.month >= 1 && item.month <= 12)
-    .map((item) => ({ ...item, key: getMonthKey(item.year, item.month) }))
-    .filter((item) => item.key <= selectedKey)
-    .sort((a, b) => a.key.localeCompare(b.key));
+  const settings = await loadGoalSettings(groupId);
   const contributions = settings.contributions as Array<Record<string, unknown>>;
   const activeContributions = contributions.filter((item) => {
     if (item.status === "reversed") return false;

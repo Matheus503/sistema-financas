@@ -202,6 +202,8 @@ export default function DashboardPage() {
       monthlyReportData.accounts,
       monthlyReportData.months,
       new Date().getFullYear(),
+      undefined,
+      monthlyReportData.adjustmentsByMonth,
     ).averages.balance;
   }, [monthlyReportData]);
 

@@ -96,6 +96,102 @@ export const DEFAULT_INVESTOR_SETTINGS: InvestorSettings = {
 const getMonthKey = (year: number, month: number) =>
   `${year}-${String(month).padStart(2, "0")}`;
 
+type InvestorLedgerMonth = { id: string; year: number; month: number };
+type InvestorLedgerPlan = { effectiveMonth: string; monthlyPlan: number };
+
+export function calculateInvestorMonthlyBalanceImpacts(
+  months: InvestorLedgerMonth[],
+  movements: InvestorMovement[],
+  plans: InvestorLedgerPlan[],
+) {
+  const monthRecords = months
+    .filter((item) => Number.isInteger(item.year) && Number.isInteger(item.month) && item.month >= 1 && item.month <= 12)
+    .map((item) => ({ ...item, key: getMonthKey(item.year, item.month) }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+  const earliestMovementMonth = movements
+    .map((movement) => getMonthKey(movement.year, movement.month))
+    .sort()[0];
+  const earliestPlanMonth = plans.map((plan) => plan.effectiveMonth).sort()[0];
+  const trackingStart = [earliestMovementMonth, earliestPlanMonth].filter((key): key is string => !!key).sort()[0];
+  const trackedMonths = trackingStart
+    ? monthRecords.filter((item) => item.key >= trackingStart)
+    : [];
+  let freeBalanceCents = 0;
+  let reserveFundedPurchaseBalanceCents = 0;
+  const impacts = new Map<string, number>();
+
+  for (const ledgerMonth of trackedMonths) {
+    const freeBalanceBeforeMonthCents = freeBalanceCents;
+    const plan = plans.filter((item) => item.effectiveMonth <= ledgerMonth.key).at(-1);
+    freeBalanceCents += Math.round((plan?.monthlyPlan ?? DEFAULT_INVESTOR_SETTINGS.monthlyPlan) * 100);
+    const monthMovements = movements.filter((movement) => movement.monthId === ledgerMonth.id);
+    const hasInvestmentActivity = monthMovements.some((movement) =>
+      (movement.type === "purchase" && Boolean(movement.category))
+      || (movement.type === "reserve" && movement.direction === "deposit"),
+    );
+    reserveFundedPurchaseBalanceCents += monthMovements
+      .filter((movement) => movement.type === "reserve" && movement.direction === "withdrawal")
+      .reduce((total, movement) => total + movement.amountCents, 0);
+    let monthlyCashOutflowCents = monthMovements
+      .filter((movement) => movement.type === "reserve" && movement.direction === "deposit")
+      .reduce((total, movement) => total + movement.amountCents, 0);
+
+    for (const movement of monthMovements) {
+      if (movement.type === "purchase" && movement.category) {
+        freeBalanceCents -= movement.amountCents;
+        const fundedFromReserveCents = Math.min(reserveFundedPurchaseBalanceCents, movement.amountCents);
+        reserveFundedPurchaseBalanceCents -= fundedFromReserveCents;
+        monthlyCashOutflowCents += movement.amountCents - fundedFromReserveCents;
+      } else if (movement.type === "reserve") {
+        if (movement.direction === "deposit") freeBalanceCents -= movement.amountCents;
+        else if (movement.direction === "withdrawal") freeBalanceCents += movement.amountCents;
+      }
+    }
+
+    const availableBalanceChangeCents = hasInvestmentActivity
+      ? freeBalanceCents - freeBalanceBeforeMonthCents
+      : 0;
+    impacts.set(ledgerMonth.id, monthlyCashOutflowCents + availableBalanceChangeCents);
+  }
+
+  return impacts;
+}
+
+export async function getInvestorMonthlyBalanceImpacts(
+  groupId: string,
+  months: InvestorLedgerMonth[],
+) {
+  const [snapshot, settingsSnapshot] = await Promise.all([
+    getDocs(query(collection(db, "investments"), where("groupId", "==", groupId))),
+    getDocs(query(collection(db, "settings"), where("groupId", "==", groupId))),
+  ]);
+  const monthById = new Map(months.map((month) => [month.id, month]));
+  const movements: InvestorMovement[] = snapshot.docs
+    .filter((item) => item.data().kind === "investor" && ["purchase", "reserve", "contribution"].includes(String(item.data().type)))
+    .map((item) => {
+      const data = item.data();
+      const linkedMonthId = String(data.monthId || "");
+      const linkedMonth = monthById.get(linkedMonthId);
+      return {
+        id: item.id,
+        type: data.type === "reserve" ? "reserve" as const : data.type === "contribution" ? "contribution" as const : "purchase" as const,
+        year: linkedMonth?.year ?? Number(data.year),
+        month: linkedMonth?.month ?? Number(data.month),
+        monthId: linkedMonthId,
+        category: data.category as InvestmentPurchaseCategory | undefined,
+        direction: data.direction === "withdrawal" ? "withdrawal" as const : data.direction === "deposit" ? "deposit" as const : undefined,
+        amountCents: Number(data.amountCents) || 0,
+      };
+    });
+  const plans: InvestorLedgerPlan[] = settingsSnapshot.docs
+    .map((item) => item.data())
+    .filter((item) => item.kind === "investor" && typeof item.effectiveMonth === "string")
+    .map((item) => ({ effectiveMonth: String(item.effectiveMonth), monthlyPlan: Number(item.monthlyPlan) || 0 }))
+    .sort((a, b) => a.effectiveMonth.localeCompare(b.effectiveMonth));
+
+  return calculateInvestorMonthlyBalanceImpacts(months, movements, plans);
+}
+
 export async function getInvestorSettings(
   groupId: string,
   year: number,
@@ -315,6 +411,11 @@ export async function getInvestorPortfolioData(
 
   summary.reserveBalanceCents = reserveBalanceCents;
   summary.freeBalanceCents = summary.availableBalanceCents;
+  summary.monthlyBalanceImpactCents = calculateInvestorMonthlyBalanceImpacts(
+    monthRecords,
+    portfolioMovements,
+    plans,
+  ).get(monthId) || 0;
 
   return {
     portfolioMovements,
