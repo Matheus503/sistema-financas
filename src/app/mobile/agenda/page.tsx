@@ -1,4 +1,4 @@
-import MobileAccountTypePage from "../../../components/MobileAccountTypePage";
+import MobileAccountTypePage from "../../../features/accounts/ui/MobileAccountTypePage";
 
 export default function MobileAgendaPage() {
   return (

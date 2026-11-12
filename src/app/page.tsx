@@ -3,30 +3,32 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { loginWithGoogle, auth } from "../lib/auth";
-import { firebaseConfig } from "../lib/firebase";
 import {
-  ensureUserProfile,
-  ExistingOwnerAccountError,
-} from "../services/userService";
+  getLoginFirebaseConfig,
+  signInWithGoogle,
+  subscribeToLoginUser,
+  validateLoginProfile,
+} from "../features/auth/application/loginSession";
 
 export default function LoginPage() {
   const router = useRouter();
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
 
   const handleLogin = async () => {
     setLoginError("");
     setIsLoggingIn(true);
 
     try {
-      await loginWithGoogle();
+      await signInWithGoogle();
     } catch (error: unknown) {
       const code =
         error instanceof Error && "code" in error
           ? String(error.code)
           : "";
 
+      const firebaseConfig = getLoginFirebaseConfig();
       const message =
         code === "auth/unauthorized-domain"
           ? `Este endereço local não está autorizado no Firebase do projeto ${firebaseConfig.projectId}. Confira os domínios autorizados do authDomain ${firebaseConfig.authDomain}.`
@@ -43,45 +45,50 @@ export default function LoginPage() {
   };
 
 useEffect(() => {
-  const unsub = auth.onAuthStateChanged(async (user) => {
-    if (!user) return;
+  let active = true;
+  const unsub = subscribeToLoginUser(async (user) => {
+    if (!user) {
+      if (active) setIsCheckingSession(false);
+      return;
+    }
 
-    try {
-      await ensureUserProfile(user);
-    } catch (error) {
-      if (error instanceof ExistingOwnerAccountError) {
-        const message = error.message;
-        setLoginError(message);
-        toast.error(message);
-        await auth.signOut();
-        return;
-      }
-
-      const message = "Nao foi possivel carregar seu perfil. Tente entrar novamente.";
-      setLoginError(message);
-      toast.error(message);
-      console.error("Erro ao carregar perfil:", error);
-      await auth.signOut();
+    const profileFailure = await validateLoginProfile(user);
+    if (!active) return;
+    if (profileFailure) {
+      setLoginError(profileFailure.message);
+      toast.error(profileFailure.message);
+      console.error("Erro ao carregar perfil:", profileFailure.cause);
+      setIsCheckingSession(false);
       return;
     }
 
     const currentPath = window.location.pathname;
 
     // 🔥 Se já está no mobile, NÃO redireciona
-    if (currentPath.startsWith("/mobile")) return;
+    if (currentPath.startsWith("/mobile")) {
+      setIsCheckingSession(false);
+      return;
+    }
 
     // 🔥 Detecta mobile
     const isMobile = window.innerWidth < 768;
 
     if (isMobile) {
-      router.push("/mobile");
+      router.replace("/mobile");
     } else {
-      router.push("/dashboard");
+      router.replace("/dashboard");
     }
   });
 
-  return () => unsub();
+  return () => {
+    active = false;
+    unsub();
+  };
 }, [router]);
+
+  if (isCheckingSession) {
+    return <div className="min-h-screen bg-black" aria-busy="true" />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-zinc-900 flex items-center justify-center text-white">

@@ -1,9 +1,8 @@
 "use client";
 
 
-import { groupAccountsByDay } from "../lib/accountSchedule";
-import { isPixAccount } from "../services/accountService";
-import type { FinanceAccount } from "../services/accountService";
+import { groupAccountsByDay } from "../domain/finance/accountSchedule";
+import { isPixAccount, type FinanceAccount } from "../domain/finance/account";
 
 type Props = {
   accounts: FinanceAccount[];

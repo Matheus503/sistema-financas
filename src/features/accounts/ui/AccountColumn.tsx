@@ -1,0 +1,184 @@
+"use client";
+
+import { useMemo } from "react";
+import {
+  formatAccountNameWithDueDay,
+  isCalculatedAccount,
+  isCreditCardAccount,
+  isPixAccount,
+  type FinanceAccount,
+} from "../../../domain/finance/account";
+import { getValidDueDay } from "../../../lib/accountSchedule";
+
+type Props = {
+  title: string;
+  type: string;
+  accounts: FinanceAccount[];
+  getAccountValue: (acc: FinanceAccount) => number;
+  formatMoney: (v: number) => string;
+  onDelete: (acc: FinanceAccount) => void;
+  onToggle: (acc: FinanceAccount) => void;
+  onEdit: (acc: FinanceAccount) => void;
+  onEditDetails: (acc: FinanceAccount) => void;
+  onAdd: (type: string) => void;
+  onOpenStatement?: (acc: FinanceAccount) => void;
+  onOpenPixHistory?: (acc: FinanceAccount) => void;
+  onEditExpectedValue?: (acc: FinanceAccount) => void;
+  onReorder?: (type: string, draggedId: string, targetId: string) => void;
+};
+
+export default function AccountColumn({
+  title,
+  type,
+  accounts,
+  getAccountValue,
+  formatMoney,
+  onDelete,
+  onToggle,
+  onEdit,
+  onEditDetails,
+  onAdd,
+  onOpenStatement,
+  onOpenPixHistory,
+  onEditExpectedValue,
+}: Props) {
+  const columnAccounts = useMemo(() => {
+    return accounts
+      .filter((a) => a.type === type)
+      .map((account, index) => ({ account, index }))
+      .sort((a, b) => {
+        const aDueDay = getValidDueDay(a.account);
+        const bDueDay = getValidDueDay(b.account);
+        const aSortDay =
+          aDueDay === null ? Number.POSITIVE_INFINITY : aDueDay;
+        const bSortDay =
+          bDueDay === null ? Number.POSITIVE_INFINITY : bDueDay;
+        const aOrder = Number.isFinite(Number(a.account.order))
+          ? Number(a.account.order)
+          : a.index;
+        const bOrder = Number.isFinite(Number(b.account.order))
+          ? Number(b.account.order)
+          : b.index;
+
+        if (aSortDay !== bSortDay) return aSortDay - bSortDay;
+        return aOrder - bOrder;
+      })
+      .map(({ account }) => account);
+  }, [accounts, type]);
+
+  const columnTotal = useMemo(
+    () =>
+      columnAccounts.reduce(
+        (total, account) => total + getAccountValue(account),
+        0,
+      ),
+    [columnAccounts, getAccountValue],
+  );
+
+  return (
+    <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800">
+      <div className="flex justify-between items-center mb-4">
+        <div className="min-w-0">
+          <h2 className="font-semibold">{title}</h2>
+          <p className="mt-0.5 text-sm font-semibold text-zinc-300">
+            Total: {formatMoney(columnTotal)}
+          </p>
+        </div>
+        <button
+          onClick={() => onAdd(type)}
+          className="bg-purple-600 hover:bg-purple-700 w-7 h-7 rounded-full transition"
+          type="button"
+          aria-label={`Adicionar conta — ${title}`}
+        >
+          +
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {columnAccounts
+          .map((acc) => {
+            const isCreditCard = isCreditCardAccount(acc);
+            const isPix = isPixAccount(acc);
+            const isProtectedAccount = isCalculatedAccount(acc);
+            const canEditDetails = !isProtectedAccount || isCreditCard || isPix;
+
+            return (
+              <div
+                key={acc.id}
+                onClick={() => {
+                  onToggle(acc);
+                }}
+                className={`flex justify-between items-center p-3 rounded-xl cursor-pointer transition border
+                  ${
+                    acc.isPaid
+                      ? "bg-green-500/18 border-l-4 border-l-green-400 border-green-400/25 hover:bg-green-500/24"
+                      : "bg-red-500/18 border-l-4 border-l-red-400 border-red-400/25 hover:bg-red-500/24"
+                  }
+                `}
+              >
+                <span
+                  className={`pr-2 ${
+                    !canEditDetails
+                      ? "cursor-default"
+                      : "cursor-pointer hover:underline"
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!canEditDetails) return;
+                    onEditDetails(acc);
+                  }}
+                >
+                  {formatAccountNameWithDueDay(acc)}
+                </span>
+
+                <div
+                  className="flex gap-2 items-center"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {isCreditCard ? (
+                    <div className="flex items-center gap-1 font-semibold">
+                      <span
+                        onClick={() => onOpenStatement?.(acc)}
+                        className="cursor-pointer hover:underline"
+                      >
+                        {formatMoney(getAccountValue(acc))}
+                      </span>
+
+                      <span className="text-zinc-400">/</span>
+
+                      <span
+                        onClick={() => onEditExpectedValue?.(acc)}
+                        className="cursor-pointer text-purple-200 hover:underline"
+                        title="Editar valor previsto"
+                      >
+                        {formatMoney(Number(acc.expectedValue || 0))}
+                      </span>
+                    </div>
+                  ) : (
+                    <span
+                      onClick={() => {
+                        if (isPix) {
+                          onOpenPixHistory?.(acc);
+                          return;
+                        }
+                        onEdit(acc);
+                      }}
+                      className="cursor-pointer hover:underline"
+                    >
+                      {formatMoney(getAccountValue(acc))}
+                    </span>
+                  )}
+
+                  {!isProtectedAccount && (
+                    <button onClick={() => onDelete(acc)} type="button">
+                      🗑
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+      </div>
+    </div>
+  );
+}

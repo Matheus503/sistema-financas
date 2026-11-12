@@ -3,6 +3,7 @@
     "name": "Controle Financeiro",
     "slug": "sistema-financas-mobile",
     "scheme": "sistemafinancas",
+    "icon": "./assets/icon.png",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
@@ -14,7 +15,11 @@
       "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
-      "package": "com.sistemafinancas.mobile"
+      "package": "com.sistemafinancas.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#111114",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      }
     }
   }
 }

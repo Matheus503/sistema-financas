@@ -67,8 +67,13 @@ const normalizeRow = (line: string) => {
 };
 
 const parseAmount = (value: string) => {
-  const normalized = String(value || "")
-    .trim()
+  const rawValue = String(value ?? "").trim();
+
+  if (!rawValue) {
+    throw new Error("Valor invalido no CSV do Nubank: vazio.");
+  }
+
+  const normalized = rawValue
     .replace(/\s+/g, "")
     .replace(/\./g, "")
     .replace(",", ".");
@@ -140,6 +145,15 @@ export const parseNubankCsv = (csvText: string): NubankParseResult => {
     const [date = "", title = "", rawAmount = ""] = normalizeRow(line);
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new Error(`Data invalida na linha ${lineNumber}: ${date}`);
+    }
+
+    const parsedDate = new Date(`${date}T00:00:00.000Z`);
+
+    if (
+      Number.isNaN(parsedDate.getTime()) ||
+      parsedDate.toISOString().slice(0, 10) !== date
+    ) {
       throw new Error(`Data invalida na linha ${lineNumber}: ${date}`);
     }
 

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
 import PaymentSchedule from "./PaymentSchedule";
-import type { FinanceAccount } from "../services/accountService";
+import type { FinanceAccount } from "../domain/finance/account";
 
 type Props = {
   accounts: FinanceAccount[];

@@ -1,0 +1,1376 @@
+"use client";
+
+import SearchSelect from "../../../components/SearchSelect";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { getCurrentWebUser } from "../../auth/application/webSession";
+import {
+  getAccountClosingDay,
+  getCreditCardClosingDay,
+  isCreditCardAccount,
+  isPixAccount,
+  type FinanceAccount,
+} from "../../../domain/finance/account";
+import type { FinanceCategory } from "../../../domain/finance/category";
+import {
+  buildInstallmentSchedule,
+  getCreditCardKey,
+  getInvoiceMonth,
+  matchesSelectedCreditCard,
+  validateInvoiceMonthRange,
+} from "../../../domain/finance/installment";
+import {
+  createLaunchAccount,
+  createLaunchCategory,
+  createLaunchInstallmentPurchase,
+  createLaunchMonth,
+  createLaunchTransaction,
+  ensureLaunchUserProfile,
+  loadLaunchCategories,
+  loadLaunchMonthAccounts,
+  loadLaunchMonths,
+  removeLaunchCategory,
+  renameLaunchCategory,
+  updateLaunchAccountValue,
+} from "../application/launchCommands";
+import { useModalKeyboardActions } from "../../../hooks/useModalKeyboardActions";
+
+type MonthDoc = {
+  id: string;
+  year: number;
+  month: number;
+};
+
+type TransactionRecord = {
+  id: string;
+  accountId?: string;
+  value?: number;
+  date?: string;
+  category?: string;
+  note?: string;
+  userId?: string;
+  userName?: string;
+  launcherId?: string;
+  launcherName?: string;
+};
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  monthId: string | null;
+  accounts: FinanceAccount[];
+  setAccounts: React.Dispatch<React.SetStateAction<FinanceAccount[]>>;
+  setTransactions: React.Dispatch<React.SetStateAction<TransactionRecord[]>>;
+  onMonthsChanged?: (targetMonthId: string) => Promise<void>;
+  onSaved?: (targetMonthId: string) => Promise<void> | void;
+  initialValues?: {
+    accountId?: string;
+    value?: number;
+    date?: string;
+    category?: string;
+    note?: string;
+  } | null;
+};
+
+const resolveLauncherName = () => {
+  const currentUser = getCurrentWebUser();
+  return (
+    currentUser?.displayName?.split(" ")[0] ||
+    currentUser?.email?.split("@")[0] ||
+    ""
+  );
+};
+
+const getCategorySeedPreset = (email: string) => {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  return [
+    "matheus.gomesmoreira@gmail.com",
+    "giovana.bonardi96@gmail.com",
+  ].includes(normalizedEmail)
+    ? "legacy"
+    : "generic";
+};
+
+const getTodayDateKey = () => {
+  const now = new Date();
+
+  const year = now.getFullYear();
+
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const getInstallmentGroupId = () => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const CUSTOM_INSTALLMENTS = "custom";
+const MAX_INSTALLMENTS = 60;
+const categoriesCache = new Map<string, FinanceCategory[]>();
+
+// 🔥 FORMATA MOEDA DIGITANDO
+const formatCurrencyInput = (value: string) => {
+  const numbers = value.replace(/\D/g, "");
+
+  const amount = Number(numbers) / 100;
+
+  return amount.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+// 🔥 CONVERTE PRA NUMBER
+const parseCurrency = (v: string) => {
+  if (!v) return 0;
+
+  return Number(v.replace(/\./g, "").replace(",", "."));
+};
+
+const normalizeSearch = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+export default function LaunchModal({
+  open,
+  onClose,
+  monthId,
+  accounts,
+  setAccounts,
+  setTransactions,
+  onMonthsChanged,
+  onSaved,
+  initialValues,
+}: Props) {
+  const [value, setValue] = useState("");
+
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+
+  const [category, setCategory] = useState("");
+  const [categoryManageSearch, setCategoryManageSearch] = useState("");
+
+  const [categories, setCategories] = useState<FinanceCategory[]>([]);
+  const [categoryGroupId, setCategoryGroupId] = useState("");
+
+  const [showCategoriesModal, setShowCategoriesModal] = useState(false);
+
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+
+  const [newCategoryName, setNewCategoryName] = useState("");
+
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
+
+  const [editingCategory, setEditingCategory] =
+    useState<FinanceCategory | null>(null);
+
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+
+  const [isEditingCategory, setIsEditingCategory] = useState(false);
+
+  const [categoryToDelete, setCategoryToDelete] =
+    useState<FinanceCategory | null>(null);
+
+  const [isDeletingCategory, setIsDeletingCategory] = useState(false);
+
+  const [note, setNote] = useState("");
+  const [installments, setInstallments] = useState("1");
+  const [customInstallments, setCustomInstallments] = useState("");
+
+  const [date, setDate] = useState("");
+
+  const [isSaving, setIsSaving] = useState(false);
+
+  const isSavingRef = useRef(false);
+
+  const variableAccounts = useMemo(() => {
+    return accounts.filter((acc) => acc.type === "VARIABLE");
+  }, [accounts]);
+
+
+  const selectedAccount = useMemo(() => {
+    return accounts.find((acc) => acc.id === selectedAccountId);
+  }, [accounts, selectedAccountId]);
+
+  const isCreditCardSelected = isCreditCardAccount(selectedAccount);
+  const isPixSelected = isPixAccount(selectedAccount);
+  const fieldLabelClass = "mb-1 block text-xs font-semibold text-zinc-400";
+
+
+  const filteredManagedCategories = useMemo(() => {
+    const search = normalizeSearch(categoryManageSearch);
+
+    if (!search) return categories;
+
+    return categories.filter((item) =>
+      normalizeSearch(item.name).includes(search),
+    );
+  }, [categories, categoryManageSearch]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let isMounted = true;
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setValue(
+      initialValues?.value
+        ? formatCurrencyInput(String(Math.round(initialValues.value * 100)))
+        : "",
+    );
+    setNote(initialValues?.note || "");
+    setInstallments("1");
+    setCustomInstallments("");
+    setDate(initialValues?.date || getTodayDateKey());
+    setCategory(initialValues?.category || "");
+    setCategoryManageSearch("");
+    setShowCategoriesModal(false);
+    setShowAddCategoryModal(false);
+    setNewCategoryName("");
+    setIsSavingCategory(false);
+    setEditingCategory(null);
+    setEditingCategoryName("");
+    setIsEditingCategory(false);
+    setCategoryToDelete(null);
+    setIsDeletingCategory(false);
+    setIsSaving(false);
+
+    isSavingRef.current = false;
+
+    const primaryCreditCard = variableAccounts.find(
+      (acc) =>
+        isCreditCardAccount(acc) &&
+        acc.isPrimaryCreditCard === true &&
+        acc.isArchived !== true,
+    );
+
+    const creditCard = variableAccounts.find(
+      (acc) => isCreditCardAccount(acc) && acc.isArchived !== true,
+    );
+
+    const initialAccount = initialValues?.accountId
+      ? variableAccounts.find((acc) => acc.id === initialValues.accountId)
+      : null;
+
+    const defaultAccount =
+      initialAccount || primaryCreditCard || creditCard || variableAccounts[0];
+
+    if (defaultAccount) {
+      setSelectedAccountId(defaultAccount.id);
+    } else {
+      setSelectedAccountId("");
+    }
+
+    const loadCategories = async () => {
+      const currentUser = getCurrentWebUser();
+      if (!currentUser) return;
+
+      try {
+        const profile = await ensureLaunchUserProfile(currentUser);
+        if (isMounted) {
+          setCategoryGroupId(profile.groupId);
+        }
+
+        const cachedCategories = categoriesCache.get(profile.groupId);
+        if (cachedCategories) {
+          if (isMounted) {
+            setCategories(cachedCategories);
+          }
+
+          return;
+        }
+
+        const groupCategories = await loadLaunchCategories(
+          profile.groupId,
+          {
+            preset: getCategorySeedPreset(profile.email),
+          },
+        );
+
+        categoriesCache.set(profile.groupId, groupCategories);
+
+        if (isMounted) {
+          setCategories(groupCategories);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar categorias:", error);
+
+        if (isMounted) {
+          setCategories([]);
+          toast.error("Nao foi possivel carregar as categorias.");
+        }
+      }
+    };
+
+    loadCategories();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [initialValues, open, variableAccounts]);
+
+  const closeMainModal = () => {
+    if (isSavingRef.current) return;
+
+    setValue("");
+    setCategory("");
+    setCategoryManageSearch("");
+    setNote("");
+    setInstallments("1");
+    setCustomInstallments("");
+
+    setDate(getTodayDateKey());
+
+    onClose();
+  };
+
+  const openAddCategory = () => {
+    setNewCategoryName("");
+    setShowAddCategoryModal(true);
+  };
+
+  const closeAddCategory = () => {
+    if (isSavingCategory) return;
+
+    setNewCategoryName("");
+    setShowAddCategoryModal(false);
+  };
+
+  const saveCategory = async () => {
+    const trimmedName = newCategoryName.trim();
+
+    if (!categoryGroupId || !trimmedName) {
+      toast.error("Informe o nome da categoria.");
+      return;
+    }
+
+    setIsSavingCategory(true);
+
+    try {
+      const nextOrder =
+        categories.length > 0
+          ? Math.max(
+              ...categories.map((item, index) =>
+                Number.isFinite(Number(item.order))
+                  ? Number(item.order)
+                  : index,
+              ),
+            ) + 1
+          : 0;
+
+      const newCategory = await createLaunchCategory(
+        categoryGroupId,
+        trimmedName,
+        nextOrder,
+      );
+
+      const updatedCategories = [...categories, newCategory].sort((a, b) => {
+        const orderDiff = Number(a.order || 0) - Number(b.order || 0);
+        if (orderDiff !== 0) return orderDiff;
+        return a.name.localeCompare(b.name);
+      });
+
+      setCategories(updatedCategories);
+      categoriesCache.set(categoryGroupId, updatedCategories);
+      setCategory(newCategory.name);
+      setNewCategoryName("");
+      setShowAddCategoryModal(false);
+      toast.success("Categoria cadastrada com sucesso.");
+    } catch (error) {
+      console.error("Erro ao cadastrar categoria:", error);
+      toast.error("Nao foi possivel cadastrar a categoria.");
+    } finally {
+      setIsSavingCategory(false);
+    }
+  };
+
+  const openEditCategory = (item: FinanceCategory) => {
+    setEditingCategory(item);
+    setEditingCategoryName(item.name);
+  };
+
+  const closeEditCategory = () => {
+    if (isEditingCategory) return;
+
+    setEditingCategory(null);
+    setEditingCategoryName("");
+  };
+
+  const saveCategoryName = async () => {
+    if (!editingCategory) return;
+
+    const trimmedName = editingCategoryName.trim();
+
+    if (!trimmedName) {
+      toast.error("Informe o nome da categoria.");
+      return;
+    }
+
+    setIsEditingCategory(true);
+
+    try {
+      const nextName = await renameLaunchCategory(
+        editingCategory.id,
+        trimmedName,
+      );
+
+      setCategories((prev) =>
+        {
+          const updatedCategories = prev.map((item) =>
+            item.id === editingCategory.id ? { ...item, name: nextName } : item,
+          );
+
+          categoriesCache.set(editingCategory.groupId, updatedCategories);
+
+          return updatedCategories;
+        },
+      );
+
+      if (category === editingCategory.name) {
+        setCategory(nextName);
+      }
+
+      setEditingCategory(null);
+      setEditingCategoryName("");
+      toast.success("Categoria editada com sucesso.");
+    } catch (error) {
+      console.error("Erro ao editar categoria:", error);
+      toast.error("Nao foi possivel editar a categoria.");
+    } finally {
+      setIsEditingCategory(false);
+    }
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+
+    setIsDeletingCategory(true);
+
+    try {
+      await removeLaunchCategory(categoryToDelete.id);
+
+      setCategories((prev) =>
+        {
+          const updatedCategories = prev.filter(
+            (item) => item.id !== categoryToDelete.id,
+          );
+
+          categoriesCache.set(categoryToDelete.groupId, updatedCategories);
+
+          return updatedCategories;
+        },
+      );
+
+      if (category === categoryToDelete.name) {
+        setCategory("");
+      }
+
+      setCategoryToDelete(null);
+      toast.success("Categoria excluida com sucesso.");
+    } catch (error) {
+      console.error("Erro ao excluir categoria:", error);
+      toast.error("Nao foi possivel excluir a categoria.");
+    } finally {
+      setIsDeletingCategory(false);
+    }
+  };
+
+
+
+  const selectAccount = (nextAccountId: string) => {
+    setSelectedAccountId(nextAccountId);
+
+    const nextAccount = accounts.find((acc) => acc.id === nextAccountId);
+
+    if (!isCreditCardAccount(nextAccount) && !isPixAccount(nextAccount)) {
+      setCategory("");
+      setInstallments("1");
+      setCustomInstallments("");
+    }
+  };
+
+  const selectCategory = (nextCategory: string) => {
+    setCategory(nextCategory);
+  };
+
+  useModalKeyboardActions({
+    enabled:
+      open &&
+      !showCategoriesModal &&
+      !showAddCategoryModal &&
+      !editingCategory &&
+      !categoryToDelete,
+    onCancel: closeMainModal,
+    cancelDisabled: isSaving,
+  });
+
+
+
+  useModalKeyboardActions({
+    enabled:
+      open &&
+      showCategoriesModal &&
+      !showAddCategoryModal &&
+      !editingCategory &&
+      !categoryToDelete,
+    onCancel: () => {
+      setCategoryManageSearch("");
+      setShowCategoriesModal(false);
+    },
+  });
+
+  useModalKeyboardActions({
+    enabled: open && showAddCategoryModal,
+    onCancel: closeAddCategory,
+    cancelDisabled: isSavingCategory,
+  });
+
+  useModalKeyboardActions({
+    enabled: open && Boolean(editingCategory),
+    onCancel: closeEditCategory,
+    cancelDisabled: isEditingCategory,
+  });
+
+  useModalKeyboardActions({
+    enabled: open && Boolean(categoryToDelete),
+    onCancel: () => {
+      if (isDeletingCategory) return;
+      setCategoryToDelete(null);
+    },
+    onConfirm: confirmDeleteCategory,
+    cancelDisabled: isDeletingCategory,
+    confirmDisabled: isDeletingCategory,
+  });
+
+  if (!open) return null;
+
+  const getOrCreateCreditCardForMonth = async (
+    targetMonthId: string,
+    selected: FinanceAccount,
+  ) => {
+    const targetAccounts =
+      targetMonthId === monthId
+        ? accounts
+        : ((await loadLaunchMonthAccounts(targetMonthId)) as FinanceAccount[]);
+
+    const existingCard = targetAccounts.find((acc) =>
+      matchesSelectedCreditCard(acc, selected),
+    );
+
+    if (existingCard) return existingCard;
+
+    const sameTypeAccounts = targetAccounts.filter(
+      (acc) => acc.type === selected.type,
+    );
+
+    const nextOrder =
+      sameTypeAccounts.length > 0
+        ? Math.max(
+            ...sameTypeAccounts.map((acc, index) =>
+              Number.isFinite(Number(acc.order)) ? Number(acc.order) : index,
+            ),
+          ) + 1
+        : 0;
+
+    return createLaunchAccount(targetMonthId, {
+      name: selected.name,
+      type: selected.type,
+      value: 0,
+      dia_vencimento: selected.dia_vencimento,
+      dia_fechamento: getCreditCardClosingDay(selected),
+      isCreditCard: true,
+      creditCardKey: getCreditCardKey(selected),
+      isPrimaryCreditCard: selected.isPrimaryCreditCard === true,
+      isPaid: false,
+      order: nextOrder,
+    });
+  };
+
+  const handleSave = async () => {
+    if (isSavingRef.current) return;
+
+    const currentUser = getCurrentWebUser();
+    if (!monthId || !currentUser) return;
+
+    const parsedValue = parseCurrency(value);
+    const parsedInstallments = isCreditCardSelected
+      ? installments === CUSTOM_INSTALLMENTS
+        ? Number(customInstallments || 0)
+        : Number(installments || 1)
+      : 1;
+
+    if (!parsedValue) {
+      toast.error("Informe o valor do lançamento.");
+
+      return;
+    }
+
+    if (
+      isCreditCardSelected &&
+      (!Number.isInteger(parsedInstallments) ||
+        parsedInstallments < 1 ||
+        parsedInstallments > MAX_INSTALLMENTS)
+    ) {
+      toast.error(`Informe entre 1 e ${MAX_INSTALLMENTS} parcelas.`);
+      return;
+    }
+
+    const selected = accounts.find((acc) => acc.id === selectedAccountId);
+
+    if (!selected) {
+      toast.error("Selecione uma conta.");
+
+      return;
+    }
+
+    if ((isCreditCardSelected || isPixSelected) && !category) {
+      toast.error("Selecione uma categoria.");
+
+      return;
+    }
+
+    const launcherName = resolveLauncherName();
+
+    const launchDate = date;
+
+    if (!launchDate) {
+      toast.error("Informe a data do lançamento.");
+
+      return;
+    }
+
+    isSavingRef.current = true;
+
+    setIsSaving(true);
+
+    let targetMonthId = monthId;
+
+    let targetAccount = selected;
+
+    let shouldRefreshMonths = false;
+
+    try {
+      const profile = await ensureLaunchUserProfile(currentUser);
+
+      if (isCreditCardSelected || isPixSelected) {
+        const closingDay = isPixSelected
+          ? getAccountClosingDay(selected)
+          : getCreditCardClosingDay(selected);
+        const currentInvoiceMonth = getInvoiceMonth(
+          getTodayDateKey(),
+          closingDay,
+        );
+        const selectedMonth = (await loadLaunchMonths(profile.groupId)).find(
+          (month) => month.id === monthId,
+        );
+        const referenceInvoiceMonth = selectedMonth?.year && selectedMonth?.month
+          ? { year: selectedMonth.year, month: selectedMonth.month }
+          : currentInvoiceMonth;
+        const invoiceRange = validateInvoiceMonthRange(
+          launchDate,
+          closingDay,
+          referenceInvoiceMonth,
+        );
+
+        if (!invoiceRange.isWithinAllowedRange) {
+          toast.error(
+            `Este lançamento ultrapassa o limite de uma fatura futura. A data deve gerar uma fatura até ${String(invoiceRange.nextInvoiceMonth.month).padStart(2, "0")}/${invoiceRange.nextInvoiceMonth.year}.`,
+          );
+          return;
+        }
+      }
+
+      if (isCreditCardSelected && parsedInstallments > 1) {
+        if (selected.isArchived === true) {
+          toast.error(
+            "Este cartão está arquivado e não será lançado em faturas futuras.",
+          );
+          return;
+        }
+
+        const installmentSchedule = buildInstallmentSchedule(
+          launchDate,
+          getCreditCardClosingDay(selected),
+          parsedValue,
+          parsedInstallments,
+          note,
+        );
+        const firstInvoiceMonth = installmentSchedule.firstInvoiceMonth;
+        const installmentGroupId = getInstallmentGroupId();
+        let months = (await loadLaunchMonths(profile.groupId)) as MonthDoc[];
+        let firstTargetMonth = months.find(
+          (item) =>
+            item.year === firstInvoiceMonth.year &&
+            item.month === firstInvoiceMonth.month,
+        );
+
+        if (!firstTargetMonth) {
+          const createdMonthId = await createLaunchMonth(
+            firstInvoiceMonth.year,
+            firstInvoiceMonth.month,
+            currentUser.uid,
+            profile.groupId,
+          );
+
+          firstTargetMonth = {
+            id: createdMonthId,
+            year: firstInvoiceMonth.year,
+            month: firstInvoiceMonth.month,
+          };
+          months = [...months, firstTargetMonth];
+          shouldRefreshMonths = true;
+        }
+
+        const installmentAccount = await getOrCreateCreditCardForMonth(
+          firstTargetMonth.id,
+          selected,
+        );
+        const firstInstallment = installmentSchedule.installments[0];
+        const userName =
+          currentUser.displayName || currentUser.email || "";
+
+        const firstTransaction = await createLaunchTransaction(firstTargetMonth.id, {
+          value: firstInstallment.valueCents / 100,
+          accountId: installmentAccount.id,
+          category,
+          note: firstInstallment.note,
+          userId: currentUser.uid,
+          userName,
+          launcherId: currentUser.uid,
+          launcherName,
+          date: launchDate,
+          installmentGroupId,
+          installmentCurrent: 1,
+          installmentTotal: parsedInstallments,
+        });
+
+        for (let index = 1; index < parsedInstallments; index += 1) {
+          const installment = installmentSchedule.installments[index];
+          const existingFutureMonth = months.find(
+            (item) =>
+              item.year === installment.year &&
+              item.month === installment.month,
+          );
+
+          if (!existingFutureMonth) continue;
+
+          const futureInstallmentAccount = await getOrCreateCreditCardForMonth(
+            existingFutureMonth.id,
+            selected,
+          );
+          await createLaunchTransaction(existingFutureMonth.id, {
+            value: installment.valueCents / 100,
+            accountId: futureInstallmentAccount.id,
+            category,
+            note: installment.note,
+            userId: currentUser.uid,
+            userName,
+            launcherId: currentUser.uid,
+            launcherName,
+            date: launchDate,
+            installmentGroupId,
+            installmentCurrent: installment.installmentNumber,
+            installmentTotal: parsedInstallments,
+          });
+        }
+
+        const nextInvoiceMonth = installmentSchedule.nextInvoiceMonth;
+
+        await createLaunchInstallmentPurchase({
+          groupId: profile.groupId,
+          creditCardKey: getCreditCardKey(selected),
+          cardName: selected.name,
+          dia_vencimento: selected.dia_vencimento,
+          dia_fechamento: getCreditCardClosingDay(selected),
+          category,
+          note,
+          purchaseDate: launchDate,
+          firstYear: nextInvoiceMonth.year,
+          firstMonth: nextInvoiceMonth.month,
+          firstInstallmentNumber: 2,
+          totalPurchaseInstallments: parsedInstallments,
+          installmentValuesCents: installmentSchedule.installments
+            .slice(1)
+            .map((installment) => installment.valueCents),
+          userId: currentUser.uid,
+          userName,
+          launcherId: currentUser.uid,
+          launcherName,
+          installmentGroupId,
+        });
+
+        if (shouldRefreshMonths || firstTargetMonth.id !== monthId) {
+          await onMonthsChanged?.(firstTargetMonth.id);
+        }
+
+        if (firstTargetMonth.id === monthId) {
+          setTransactions((prev) => [...prev, firstTransaction]);
+        }
+
+        await onSaved?.(firstTargetMonth.id);
+
+        setValue("");
+        setCategory("");
+        setNote("");
+        setInstallments("1");
+        setCustomInstallments("");
+        setDate(getTodayDateKey());
+        onClose();
+
+        toast.success("Lançamento parcelado feito com sucesso.");
+        return;
+      }
+
+      if (isCreditCardSelected || isPixSelected) {
+        const invoiceMonth = getInvoiceMonth(
+          launchDate,
+          isPixSelected
+            ? getAccountClosingDay(selected)
+            : getCreditCardClosingDay(selected),
+        );
+
+        const months = (await loadLaunchMonths(profile.groupId)) as MonthDoc[];
+
+        const existingMonth = months.find(
+          (month) =>
+            month.year === invoiceMonth.year &&
+            month.month === invoiceMonth.month,
+        );
+
+        if (existingMonth) {
+          targetMonthId = existingMonth.id;
+        } else {
+          targetMonthId = await createLaunchMonth(
+            invoiceMonth.year,
+            invoiceMonth.month,
+            currentUser.uid,
+            profile.groupId,
+          );
+
+          shouldRefreshMonths = true;
+        }
+
+        if (targetMonthId !== monthId) {
+          if (isCreditCardSelected && selected.isArchived === true) {
+            toast.error(
+              "Este cartão está arquivado e não será lançado em faturas futuras.",
+            );
+            return;
+          }
+
+          const targetAccounts = (await loadLaunchMonthAccounts(
+            targetMonthId,
+          )) as FinanceAccount[];
+
+          let targetClosingAccount = isPixSelected
+            ? targetAccounts.find((acc) => isPixAccount(acc))
+            : targetAccounts.find((acc) =>
+                matchesSelectedCreditCard(acc, selected),
+              );
+
+          if (!targetClosingAccount) {
+            const sameTypeAccounts = targetAccounts.filter(
+              (acc) => acc.type === selected.type,
+            );
+
+            const nextOrder =
+              sameTypeAccounts.length > 0
+                ? Math.max(
+                    ...sameTypeAccounts.map((acc, index) =>
+                      Number.isFinite(Number(acc.order))
+                        ? Number(acc.order)
+                        : index,
+                    ),
+                  ) + 1
+                : 0;
+
+            targetClosingAccount = await createLaunchAccount(targetMonthId, {
+              name: selected.name,
+              type: selected.type,
+              value: 0,
+              ...(isPixSelected
+                ? {}
+                : { dia_vencimento: selected.dia_vencimento }),
+              dia_fechamento: isPixSelected
+                ? getAccountClosingDay(selected)
+                : getCreditCardClosingDay(selected),
+              ...(isPixSelected
+                ? {}
+                : {
+                    isCreditCard: true,
+                    creditCardKey: getCreditCardKey(selected),
+                    isPrimaryCreditCard: selected.isPrimaryCreditCard === true,
+                  }),
+              isPaid: false,
+              order: nextOrder,
+            });
+          }
+
+          targetAccount = targetClosingAccount;
+        }
+      }
+
+      const payload = {
+        value: parsedValue,
+
+        accountId: targetAccount.id,
+
+        category: isCreditCardSelected || isPixSelected ? category : "",
+
+        note,
+
+        userId: currentUser.uid,
+
+        userName: currentUser.displayName || currentUser.email || "",
+
+        launcherId: currentUser.uid,
+
+        launcherName,
+
+        date: launchDate,
+      };
+
+      const createdTransaction = await createLaunchTransaction(targetMonthId, payload);
+
+      if (shouldRefreshMonths || targetMonthId !== monthId) {
+        await onMonthsChanged?.(targetMonthId);
+      }
+
+      if (!isCreditCardAccount(selected)) {
+        const newValue = Number(targetAccount.value || 0) + parsedValue;
+
+        await updateLaunchAccountValue(targetMonthId, targetAccount.id, newValue);
+
+        if (targetMonthId === monthId) {
+          setAccounts((prev) =>
+            prev.map((acc) =>
+              acc.id === selected.id
+                ? {
+                    ...acc,
+                    value: newValue,
+                  }
+                : acc,
+            ),
+          );
+        }
+      }
+
+      if (targetMonthId === monthId) {
+        setTransactions((prev) => [...prev, createdTransaction]);
+      }
+
+      await onSaved?.(targetMonthId);
+
+      setValue("");
+      setCategory("");
+      setNote("");
+      setInstallments("1");
+      setCustomInstallments("");
+
+      setDate(getTodayDateKey());
+
+      onClose();
+
+      toast.success("Lançamento feito com sucesso.");
+    } catch (error) {
+      console.error(error);
+
+      toast.error("Não foi possível salvar o lançamento.");
+    } finally {
+      isSavingRef.current = false;
+
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70">
+      <form
+        className="bg-zinc-900 p-6 rounded-xl w-80 space-y-3 border border-zinc-800"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleSave();
+        }}
+      >
+        <h2 className="text-lg font-bold">Novo Lançamento</h2>
+
+        {/* 🔥 VALOR */}
+        <label className="block">
+          <span className={fieldLabelClass}>Valor total</span>
+          <input
+            type="tel"
+            inputMode="decimal"
+            value={value}
+            onChange={(e) => setValue(formatCurrencyInput(e.target.value))}
+            placeholder="Valor total"
+            required
+            disabled={isSaving}
+            className="w-full p-2 bg-zinc-800 rounded"
+          />
+        </label>
+
+        {/* 🔥 CONTA */}
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <span className={fieldLabelClass}>Conta</span>
+            <SearchSelect inputStyle value={selectedAccountId} onValueChange={selectAccount} disabled={isSaving} aria-label="Conta" placeholder="Selecione a conta" searchPlaceholder="Buscar conta" emptyMessage="Nenhuma conta encontrada." className="w-full bg-zinc-800 p-2" options={variableAccounts.map(account => ({ value: account.id, label: account.name }))} />
+          </div>
+
+          {isCreditCardSelected && (
+            <label className="w-20 shrink-0">
+              <span className={fieldLabelClass}>Parcelas</span>
+              {installments === CUSTOM_INSTALLMENTS ? (
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={customInstallments}
+                  onChange={(event) =>
+                    setCustomInstallments(event.target.value.replace(/\D/g, ""))
+                  }
+                  onBlur={() => {
+                    if (customInstallments) return;
+                    setInstallments("1");
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Escape") return;
+                    setCustomInstallments("");
+                    setInstallments("1");
+                  }}
+                  placeholder="Qtd"
+                  disabled={isSaving}
+                  className="w-full p-2 bg-zinc-800 rounded"
+                  aria-label="Número de parcelas"
+                  title="Número de parcelas"
+                  autoFocus
+                />
+              ) : (
+                <SearchSelect
+                  inputStyle
+                  searchable={false}
+                  menuMinWidth={128}
+                  value={installments}
+                  onChange={(e) => {
+                    setInstallments(e.target.value);
+                    if (e.target.value !== CUSTOM_INSTALLMENTS) {
+                      setCustomInstallments("");
+                    }
+                  }}
+                  disabled={isSaving}
+                  className="w-full p-2 bg-zinc-800 rounded"
+                  aria-label="Parcelas"
+                  title="Parcelas"
+                >
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map(
+                    (item) => (
+                      <option key={item} value={item}>
+                        {item}x
+                      </option>
+                    ),
+                  )}
+                  <option value={CUSTOM_INSTALLMENTS}>Outro</option>
+                </SearchSelect>
+              )}
+            </label>
+          )}
+        </div>
+
+        {/* 🔥 CATEGORIA */}
+        {(isCreditCardSelected || isPixSelected) && (
+          <div className="flex items-end gap-2">
+            <div className="min-w-0 flex-1">
+              <span className={fieldLabelClass}>Categoria</span>
+              <SearchSelect inputStyle value={category} onValueChange={selectCategory} disabled={isSaving} aria-label="Categoria" placeholder="Selecione a categoria" searchPlaceholder="Buscar categoria" emptyMessage="Nenhuma categoria encontrada." className="w-full bg-zinc-800 p-2" options={categories.map(item => ({ value: item.name, label: item.name }))} />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowCategoriesModal(true);
+              }}
+              disabled={isSaving}
+              className="shrink-0 bg-zinc-800 hover:bg-zinc-700 p-2 rounded transition disabled:opacity-60 disabled:cursor-not-allowed"
+              title="Ver categorias"
+              aria-label="Ver categorias"
+            >
+              <Pencil size={18} />
+            </button>
+          </div>
+        )}
+
+        {/* 🔥 OBS */}
+        <label className="block">
+          <span className={fieldLabelClass}>Observação</span>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Observação"
+            disabled={isSaving}
+            className="w-full p-2 bg-zinc-800 rounded"
+          />
+        </label>
+
+        {/* 🔥 DATA */}
+        <label className="block">
+          <span className={fieldLabelClass}>Data</span>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            required
+            disabled={isSaving}
+            className="w-full p-2 bg-zinc-800 rounded"
+          />
+        </label>
+
+        {/* 🔥 BOTÕES */}
+        <div className="flex justify-between pt-2">
+          <button
+            disabled={isSaving}
+            className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+            type="submit"
+          >
+            {isSaving ? "Salvando..." : "Salvar"}
+          </button>
+
+          <button
+            onClick={closeMainModal}
+            disabled={isSaving}
+            className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+            type="button"
+          >
+            Cancelar
+          </button>
+        </div>
+      </form>
+
+      {showCategoriesModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4">
+          <div className="flex max-h-[85dvh] w-full max-w-sm flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 p-5 sm:p-6">
+            <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
+              <h2 className="text-lg font-bold">Categorias</h2>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openAddCategory}
+                  className="bg-purple-600 hover:bg-purple-700 p-2 rounded transition"
+                  title="Cadastrar categoria"
+                  aria-label="Cadastrar categoria"
+                >
+                  <Plus size={18} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCategoryManageSearch("");
+                    setShowCategoriesModal(false);
+                  }}
+                  className="bg-zinc-800 hover:bg-zinc-700 px-3 py-1 rounded transition"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            <label className="mb-4 flex shrink-0 items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/70 px-3 py-2 text-zinc-400">
+              <Search size={16} />
+              <input
+                value={categoryManageSearch}
+                onChange={(event) =>
+                  setCategoryManageSearch(event.target.value)
+                }
+                placeholder="Buscar categoria"
+                className="min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                autoFocus
+              />
+            </label>
+
+            {categories.length === 0 ? (
+              <div className="text-zinc-400">Nenhuma categoria cadastrada.</div>
+            ) : filteredManagedCategories.length === 0 ? (
+              <div className="rounded-lg bg-zinc-800/70 p-4 text-sm text-zinc-500">
+                Nenhuma categoria encontrada.
+              </div>
+            ) : (
+              <div className="category-scroll min-h-0 flex-1 overflow-y-auto space-y-2 pr-2">
+                {filteredManagedCategories.map((item) => (
+                  <div
+                    key={item.id}
+                    className="bg-zinc-800/70 border border-zinc-700 rounded-lg px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 font-medium break-words">
+                        {item.name}
+                      </span>
+
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditCategory(item)}
+                          className="p-1 text-zinc-400 hover:text-zinc-100 transition"
+                          title="Editar categoria"
+                          aria-label={`Editar categoria ${item.name}`}
+                        >
+                          <Pencil size={16} />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCategoryToDelete(item)}
+                          className="p-1 text-zinc-500 hover:text-red-300 transition"
+                          title="Excluir categoria"
+                          aria-label={`Excluir categoria ${item.name}`}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showAddCategoryModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] px-4">
+          <form
+            className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-sm p-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveCategory();
+            }}
+          >
+            <h2 className="text-lg font-bold mb-4">Nova categoria</h2>
+
+            <label className="block mb-4">
+              <span className={fieldLabelClass}>Nome da categoria</span>
+              <input
+                value={newCategoryName}
+                onChange={(event) => setNewCategoryName(event.target.value)}
+                placeholder="Nome da categoria"
+                disabled={isSavingCategory}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded p-3 outline-none"
+                autoFocus
+              />
+            </label>
+
+            <div className="flex justify-between gap-2">
+              <button
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingCategory}
+                type="submit"
+              >
+                {isSavingCategory ? "Salvando..." : "Salvar"}
+              </button>
+
+              <button
+                onClick={closeAddCategory}
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingCategory}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {editingCategory && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] px-4">
+          <form
+            className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-sm p-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveCategoryName();
+            }}
+          >
+            <h2 className="text-lg font-bold mb-4">Editar categoria</h2>
+
+            <label className="block mb-4">
+              <span className={fieldLabelClass}>Nome da categoria</span>
+              <input
+                value={editingCategoryName}
+                onChange={(event) => setEditingCategoryName(event.target.value)}
+                placeholder="Nome da categoria"
+                disabled={isEditingCategory}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded p-3 outline-none"
+                autoFocus
+              />
+            </label>
+
+            <div className="flex justify-between gap-2">
+              <button
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isEditingCategory}
+                type="submit"
+              >
+                {isEditingCategory ? "Salvando..." : "Salvar"}
+              </button>
+
+              <button
+                onClick={closeEditCategory}
+                className="bg-zinc-700 hover:bg-zinc-600 px-4 py-2 rounded font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isEditingCategory}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {categoryToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] px-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-sm p-6">
+            <h2 className="text-lg font-bold mb-2">Excluir categoria</h2>
+
+            <p className="text-sm text-zinc-400">
+              Deseja realmente excluir {categoryToDelete.name}?
+            </p>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                className="flex-1 bg-red-500/15 text-red-200 border border-red-500/30 hover:bg-red-500/25 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={confirmDeleteCategory}
+                disabled={isDeletingCategory}
+                type="button"
+                autoFocus
+              >
+                {isDeletingCategory ? "Excluindo..." : "Excluir"}
+              </button>
+
+              <button
+                className="flex-1 bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (isDeletingCategory) return;
+                  setCategoryToDelete(null);
+                }}
+                disabled={isDeletingCategory}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

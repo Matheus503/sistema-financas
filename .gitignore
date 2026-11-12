@@ -3,6 +3,7 @@
 # dependencies
 /node_modules
 /apps/mobile/node_modules
+/apps/mobile/dist/
 /.pnp
 .pnp.*
 .yarn/*
@@ -16,10 +17,14 @@
 
 # next.js
 /.next/
+/.next-card-statement-build/
 /out/
 
 # production
 /build
+/.expo/
+/apps/mobile/.expo/
+/apps/mobile/android/
 
 # misc
 .DS_Store
