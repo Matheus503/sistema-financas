@@ -3,8 +3,9 @@ import {
   deleteFinancialGoal,
   getFinancialGoalsData,
   saveFinancialGoal,
+  updateFinancialGoalContribution,
 } from "../../financial-goals/data/financialGoalsService";
-import type { FinancialGoalInput } from "../../../domain/finance/financialGoal";
+import type { FinancialGoalContributionInput, FinancialGoalInput } from "../../../domain/finance/financialGoal";
 import { db } from "../../../lib/firestore";
 
 export const financialGoalsRepository = {
@@ -26,7 +27,17 @@ export const financialGoalsRepository = {
     month: number,
     monthId: string,
     goalId: string,
-  ) => confirmFinancialGoalContribution(groupId, userId, year, month, monthId, goalId, db),
+    input: FinancialGoalContributionInput,
+  ) => confirmFinancialGoalContribution(groupId, userId, year, month, monthId, goalId, input, db),
+  updateContribution: (
+    groupId: string,
+    userId: string,
+    year: number,
+    month: number,
+    monthId: string,
+    goalId: string,
+    input: FinancialGoalContributionInput,
+  ) => updateFinancialGoalContribution(groupId, userId, year, month, monthId, goalId, input, db),
   delete: (
     groupId: string,
     userId: string,

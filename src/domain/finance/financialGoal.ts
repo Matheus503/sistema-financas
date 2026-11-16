@@ -5,6 +5,8 @@ export type FinancialGoal = {
   durationMonths: number;
   monthlyAmountCents: number;
   plannedMonthlyCents: number;
+  monthlyContributionInputCents: number;
+  estimatedMonthsAtCurrentPace: number | null;
   confirmedThisMonthCents: number;
   isConfirmedThisMonth: boolean;
   reservedAmountCents: number;
@@ -15,6 +17,10 @@ export type FinancialGoalInput = {
   name: string;
   targetAmountCents: number;
   durationMonths: number;
+};
+
+export type FinancialGoalContributionInput = {
+  amountCents: number;
 };
 
 export type FinancialGoalsData = {

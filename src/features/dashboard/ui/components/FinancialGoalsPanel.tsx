@@ -9,6 +9,7 @@ import {
   loadFinancialGoals,
   removeFinancialGoal,
   saveFinancialGoalForMonth,
+  updateGoalContributionForMonth,
 } from "../../application/financialGoals";
 
 type Props = {
@@ -52,14 +53,17 @@ export default function FinancialGoalsPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [goalToDelete, setGoalToDelete] = useState<FinancialGoal | null>(null);
+  const [editingContributionAmount, setEditingContributionAmount] = useState("0,00");
   const [editingGoal, setEditingGoal] = useState<FinancialGoal | null>(null);
   const [name, setName] = useState("");
   const [targetAmount, setTargetAmount] = useState("0,00");
   const [durationMonths, setDurationMonths] = useState("12");
+  const [monthlyContributionInputs, setMonthlyContributionInputs] = useState<Record<string, string>>({});
 
   const refreshData = useCallback(async () => {
     const data = await loadFinancialGoals(groupId, year, month, monthId);
     setGoals(data.goals);
+    setMonthlyContributionInputs(Object.fromEntries(data.goals.map((goal) => [goal.id, formatCurrencyField(goal.monthlyContributionInputCents)])));
     onMonthlyPlanChange?.(data.monthlyPlanCents);
     setLoadedKey(selectedKey);
     setLoadError("");
@@ -70,6 +74,7 @@ export default function FinancialGoalsPanel({
     void loadFinancialGoals(groupId, year, month, monthId).then((data) => {
       if (!active) return;
       setGoals(data.goals);
+      setMonthlyContributionInputs(Object.fromEntries(data.goals.map((goal) => [goal.id, formatCurrencyField(goal.monthlyContributionInputCents)])));
       onMonthlyPlanChange?.(data.monthlyPlanCents);
       setLoadedKey(selectedKey);
       setLoadError("");
@@ -87,6 +92,7 @@ export default function FinancialGoalsPanel({
     setName("");
     setTargetAmount("0,00");
     setDurationMonths("12");
+    setEditingContributionAmount("0,00");
     setMessage("");
     setIsFormOpen(true);
   };
@@ -96,6 +102,7 @@ export default function FinancialGoalsPanel({
     setName(goal.name);
     setTargetAmount(formatCurrencyField(goal.targetAmountCents));
     setDurationMonths(String(goal.durationMonths || 12));
+    setEditingContributionAmount(formatCurrencyField(goal.confirmedThisMonthCents));
     setMessage("");
     setIsFormOpen(true);
   };
@@ -105,20 +112,41 @@ export default function FinancialGoalsPanel({
     setMessage("");
     const parsedTarget = parseCurrency(targetAmount);
     const parsedDuration = Number(durationMonths);
+    const parsedContribution = editingGoal?.isConfirmedThisMonth ? parseCurrency(editingContributionAmount) : null;
     if (!name.trim() || !Number.isFinite(parsedTarget) || parsedTarget <= 0 || !Number.isInteger(parsedDuration) || parsedDuration < 1 || parsedDuration > 600) {
       setMessage("Informe um nome, uma meta maior que zero e um prazo entre 1 e 600 meses.");
       return;
     }
+    if (parsedContribution !== null && (!Number.isFinite(parsedContribution) || parsedContribution <= 0)) {
+      setMessage("Informe um valor maior que zero para o aporte efetivado.");
+      return;
+    }
     setIsSaving(true);
     try {
-      await saveFinancialGoalForMonth(groupId, userId, year, month, monthId, {
-        name,
-        targetAmountCents: Math.round(parsedTarget * 100),
-        durationMonths: parsedDuration,
-      }, editingGoal?.id);
+      const targetAmountCents = Math.round(parsedTarget * 100);
+      const goalSettingsChanged = !editingGoal
+        || name.trim() !== editingGoal.name
+        || targetAmountCents !== editingGoal.targetAmountCents
+        || parsedDuration !== editingGoal.durationMonths;
+      const contributionAmountCents = parsedContribution === null ? null : Math.round(parsedContribution * 100);
+      const contributionChanged = editingGoal?.isConfirmedThisMonth
+        && contributionAmountCents !== editingGoal.confirmedThisMonthCents;
+
+      if (goalSettingsChanged) {
+        await saveFinancialGoalForMonth(groupId, userId, year, month, monthId, {
+          name,
+          targetAmountCents,
+          durationMonths: parsedDuration,
+        }, editingGoal?.id);
+      }
+      if (editingGoal && contributionChanged && contributionAmountCents !== null) {
+        await updateGoalContributionForMonth(groupId, userId, year, month, monthId, editingGoal.id, {
+          amountCents: contributionAmountCents,
+        });
+      }
       await refreshData();
       setIsFormOpen(false);
-      setMessage(editingGoal ? "Objetivo atualizado a partir deste mês." : "Objetivo criado.");
+      setMessage("");
     } catch (error) {
       console.error("Erro ao salvar objetivo financeiro:", error);
       setMessage(error instanceof Error ? error.message : "Não foi possível salvar o objetivo.");
@@ -128,12 +156,17 @@ export default function FinancialGoalsPanel({
   };
 
   const confirmContribution = async (goal: FinancialGoal) => {
+    const amount = parseCurrency(monthlyContributionInputs[goal.id] ?? "");
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMessage("Informe um valor maior que zero para efetivar a reserva.");
+      return;
+    }
     setIsSaving(true);
     setMessage("");
     try {
-      await confirmGoalContributionForMonth(groupId, userId, year, month, monthId, goal.id);
+      await confirmGoalContributionForMonth(groupId, userId, year, month, monthId, goal.id, { amountCents: Math.round(amount * 100) });
       await refreshData();
-      setMessage(`Reserva de ${goal.name} efetivada neste mês.`);
+      setMessage("");
     } catch (error) {
       console.error("Erro ao atualizar objetivo financeiro:", error);
       setMessage(error instanceof Error ? error.message : "Não foi possível atualizar o objetivo.");
@@ -149,7 +182,7 @@ export default function FinancialGoalsPanel({
     try {
       await removeFinancialGoal(groupId, userId, year, month, monthId, goalToDelete.id);
       await refreshData();
-      setMessage(`Objetivo removido a partir de ${String(month).padStart(2, "0")}/${year}. Histórico e reservas efetivadas preservados.`);
+      setMessage("");
       setGoalToDelete(null);
     } catch (error) {
       console.error("Erro ao excluir objetivo financeiro:", error);
@@ -203,15 +236,21 @@ export default function FinancialGoalsPanel({
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800" role="progressbar" aria-label={`Progresso de ${goal.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}>
                   <div className="h-full rounded-full bg-purple-500 transition-all" style={{ width: `${progress}%` }} />
                 </div>
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
-                  <span>Faltam {formatMoney(remaining)}</span>
-                  <span>{`${formatMoney(goal.plannedMonthlyCents / 100)}/mês · ${goal.durationMonths} ${goal.durationMonths === 1 ? "mês" : "meses"}`}</span>
-                </div>
+                <p className="mt-3 text-xs text-zinc-400">
+                  {`Faltam ${formatMoney(remaining / 100)} · ${goal.estimatedMonthsAtCurrentPace ?? "—"} ${goal.estimatedMonthsAtCurrentPace === 1 ? "mês restante" : "meses restantes"}`}
+                </p>
+                {!goal.isConfirmedThisMonth && <label className="mt-3 block text-xs text-zinc-400">
+                  Valor para reservar neste mês
+                  <div className="mt-1 flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950 px-3 focus-within:border-purple-400">
+                    <span className="text-sm text-zinc-500">R$</span>
+                    <input type="tel" inputMode="decimal" value={monthlyContributionInputs[goal.id] ?? "0,00"} onChange={(event) => setMonthlyContributionInputs((current) => ({ ...current, [goal.id]: formatCurrencyTyping(event.target.value) }))} disabled={!isReady || isSaving} className="w-full bg-transparent py-2 text-right tabular-nums text-white outline-none" aria-label={`Valor para reservar neste mês para ${goal.name}`} />
+                  </div>
+                </label>}
                 <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-800 pt-3">
                   <button type="button" disabled={!isReady || isSaving} onClick={() => openEditGoal(goal)} className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">Editar</button>
                   <button type="button" disabled={!isReady || isSaving} onClick={() => setGoalToDelete(goal)} aria-label={`Excluir objetivo ${goal.name}`} title="Excluir objetivo" className="inline-flex items-center justify-center rounded-md border border-red-500/30 px-2.5 py-1.5 text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"><Trash2 size={15} aria-hidden="true" /></button>
-                  <button type="button" disabled={!isReady || isSaving || goal.isConfirmedThisMonth || goal.plannedMonthlyCents <= 0} onClick={() => void confirmContribution(goal)} className={`ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${goal.isConfirmedThisMonth ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "bg-purple-600 text-white hover:bg-purple-500"}`}>
-                    {goal.isConfirmedThisMonth ? <><Check size={14} /> Efetivado neste mês</> : <>Efetivar reserva · {formatMoney(goal.plannedMonthlyCents / 100)}</>}
+                  <button type="button" disabled={!isReady || isSaving || goal.isConfirmedThisMonth || !Number.isFinite(parseCurrency(monthlyContributionInputs[goal.id] ?? "")) || parseCurrency(monthlyContributionInputs[goal.id] ?? "") <= 0} onClick={() => void confirmContribution(goal)} className={`ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${goal.isConfirmedThisMonth ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "bg-purple-600 text-white hover:bg-purple-500"}`}>
+                    {goal.isConfirmedThisMonth ? <><Check size={14} /> Efetivado neste mês · {formatMoney(goal.confirmedThisMonthCents / 100)}</> : <>Efetivar reserva · {formatMoney(Math.round((parseCurrency(monthlyContributionInputs[goal.id] ?? "0,00") || 0) * 100) / 100)}</>}
                   </button>
                   {goal.reservedAmountCents >= goal.targetAmountCents && <span className="inline-flex items-center gap-1.5 self-center text-xs font-medium text-emerald-300"><Check size={14} /> Meta alcançada</span>}
                 </div>
@@ -254,7 +293,7 @@ export default function FinancialGoalsPanel({
               <label className="block text-sm text-zinc-300">
                 Em quanto tempo?
                 <div className="mt-1 flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950 px-3 focus-within:border-purple-400">
-                  <input type="number" min={1} max={600} step={1} value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} className="w-full bg-transparent py-2.5 text-right tabular-nums text-white outline-none" disabled={isSaving} />
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={durationMonths} onChange={(event) => setDurationMonths(event.target.value)} className="w-full bg-transparent py-2.5 text-right tabular-nums text-white outline-none" disabled={isSaving} />
                   <span className="text-sm text-zinc-500">meses</span>
                 </div>
               </label>
@@ -262,6 +301,13 @@ export default function FinancialGoalsPanel({
             <div className="rounded-lg border border-purple-400/20 bg-purple-400/5 px-3 py-2.5 text-sm text-zinc-300">
               Reserva estimada: <strong className="text-purple-200">{formatMoney(Math.ceil(Math.max(0, (Math.round((parseCurrency(targetAmount) || 0) * 100) - (editingGoal?.reservedBeforeMonthCents || 0)) / Math.max(1, Number(durationMonths) || 1)) / 100))}/mês</strong>
             </div>
+            {editingGoal?.isConfirmedThisMonth && <label className="block text-sm text-zinc-300">
+              Valor efetivado neste mês
+              <div className="mt-1 flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950 px-3 focus-within:border-purple-400">
+                <span className="text-sm text-zinc-500">R$</span>
+                <input type="tel" inputMode="decimal" value={editingContributionAmount} onChange={(event) => setEditingContributionAmount(formatCurrencyTyping(event.target.value))} disabled={isSaving} className="w-full bg-transparent py-2.5 text-right tabular-nums text-white outline-none" aria-label="Valor efetivado neste mês" />
+              </div>
+            </label>}
             <p className="text-xs text-zinc-500">A reserva estimada só será descontada dos saldos real e previsto quando você efetivá-la no mês. Alterações não modificam os meses anteriores.</p>
             {message && <p role="alert" className="text-sm text-red-300">{message}</p>}
             <div className="flex justify-end gap-2 border-t border-zinc-800 pt-4">

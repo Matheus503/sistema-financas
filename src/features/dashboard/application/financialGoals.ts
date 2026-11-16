@@ -1,5 +1,5 @@
 import { financialGoalsRepository } from "../data/financialGoalsRepository";
-import type { FinancialGoalInput } from "../../../domain/finance/financialGoal";
+import type { FinancialGoalContributionInput, FinancialGoalInput } from "../../../domain/finance/financialGoal";
 
 export function loadFinancialGoals(
   groupId: string,
@@ -37,6 +37,7 @@ export function confirmGoalContributionForMonth(
   month: number,
   monthId: string,
   goalId: string,
+  input: FinancialGoalContributionInput,
 ) {
   return financialGoalsRepository.confirmContribution(
     groupId,
@@ -45,6 +46,27 @@ export function confirmGoalContributionForMonth(
     month,
     monthId,
     goalId,
+    input,
+  );
+}
+
+export function updateGoalContributionForMonth(
+  groupId: string,
+  userId: string,
+  year: number,
+  month: number,
+  monthId: string,
+  goalId: string,
+  input: FinancialGoalContributionInput,
+) {
+  return financialGoalsRepository.updateContribution(
+    groupId,
+    userId,
+    year,
+    month,
+    monthId,
+    goalId,
+    input,
   );
 }
 

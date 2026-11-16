@@ -5,6 +5,7 @@ import {
   getDocs,
   query,
   serverTimestamp,
+  updateDoc,
   where,
   writeBatch,
   type Firestore,
@@ -12,6 +13,7 @@ import {
 import type {
   FinancialGoal,
   FinancialGoalInput,
+  FinancialGoalContributionInput,
   FinancialGoalsData,
 } from "../../../domain/finance/financialGoal";
 
@@ -70,13 +72,13 @@ const loadGoalSettings = async (groupId: string, firestore: Firestore) => {
   const snapshot = await getDocs(query(collection(firestore, "settings"), where("groupId", "==", groupId)));
   const goals = snapshot.docs
     .filter((item) => item.data().kind === "financialGoal")
-    .map((item) => ({ id: item.id, ...item.data() }));
+    .map((item) => ({ ...item.data(), id: item.id }));
   const plans = snapshot.docs
     .filter((item) => item.data().kind === "financialGoalPlan")
-    .map((item) => ({ id: item.id, ...item.data() }));
+    .map((item) => ({ ...item.data(), id: item.id }));
   const contributions = snapshot.docs
     .filter((item) => item.data().kind === "financialGoalContribution")
-    .map((item) => ({ id: item.id, ...item.data() }));
+    .map((item) => ({ ...item.data(), id: item.id }));
   return { goals, plans, contributions };
 };
 
@@ -155,20 +157,41 @@ export async function getFinancialGoalsData(
     const reservedBeforeMonthCents = getReservedBefore(goal.id, selectedKey);
     const duration = getInteger(currentPlan.durationMonths);
     const monthOffset = monthDistance(String(currentPlan.effectiveMonth), selectedKey);
-    const remainingMonths = Math.max(1, duration - monthOffset);
-    const remainingAmount = Math.max(0, getInteger(currentPlan.targetAmountCents ?? goal.targetAmountCents) - reservedBeforeMonthCents);
-    const monthlyAmountCents = duration > 0 && monthOffset < duration
-      ? Math.ceil(remainingAmount / remainingMonths)
-      : duration > 0 ? 0 : getMonthlyAmountForPlan(currentPlan, selectedKey);
+    const planTargetCents = getInteger(currentPlan.targetAmountCents ?? goal.targetAmountCents);
+    const remainingPlanAmountCents = Math.max(0, planTargetCents - getInteger(currentPlan.startingReservedCents));
+    const monthlyAmountCents = duration > 0
+      ? Math.ceil(remainingPlanAmountCents / duration)
+      : getMonthlyAmountForPlan(currentPlan, selectedKey);
     const confirmedThisMonthCents = getContributionThisMonth(goal.id);
     const reservedAmountCents = reservedBeforeMonthCents + confirmedThisMonthCents;
+    const remainingAfterThisMonthCents = Math.max(0, planTargetCents - reservedAmountCents);
+    const goalStartMonth = String(goal.createdMonth || currentPlan.effectiveMonth || selectedKey);
+    const completedMonths = Math.max(
+      0,
+      monthDistance(goalStartMonth, selectedKey) + (confirmedThisMonthCents > 0 ? 1 : 0),
+    );
+    const averageContributionCents = completedMonths > 0
+      ? Math.floor(reservedAmountCents / completedMonths)
+      : monthlyAmountCents;
+    const monthsAtCurrentPace = remainingAfterThisMonthCents === 0
+      ? 0
+      : averageContributionCents > 0
+        ? Math.ceil(remainingAfterThisMonthCents / averageContributionCents)
+        : null;
+    const estimatedMonthsAtCurrentPace = confirmedThisMonthCents > 0
+      && confirmedThisMonthCents === monthlyAmountCents
+      && monthsAtCurrentPace !== null
+      ? Math.max(monthsAtCurrentPace, Math.max(0, duration - monthOffset))
+      : monthsAtCurrentPace;
     goals.push({
       id: goal.id,
       name: String(currentPlan.name || goal.name || "Objetivo"),
-      targetAmountCents: getInteger(currentPlan.targetAmountCents ?? goal.targetAmountCents),
+      targetAmountCents: planTargetCents,
       durationMonths: Math.max(0, getInteger(currentPlan.durationMonths) - monthDistance(String(currentPlan.effectiveMonth), selectedKey)),
       monthlyAmountCents,
       plannedMonthlyCents: monthlyAmountCents,
+      monthlyContributionInputCents: monthlyAmountCents,
+      estimatedMonthsAtCurrentPace,
       confirmedThisMonthCents,
       isConfirmedThisMonth: confirmedThisMonthCents > 0,
       reservedAmountCents,
@@ -251,12 +274,18 @@ export async function confirmFinancialGoalContribution(
   month: number,
   monthId: string,
   goalId: string,
+  input: FinancialGoalContributionInput,
   firestore: Firestore,
 ) {
   await assertMonthExists(groupId, monthId, year, month, firestore);
-  const { goals, plans, contributions } = await loadGoalSettings(groupId, firestore);
-  const goal = goals.find((item) => item.id === goalId) as (Record<string, unknown> & { id: string }) | undefined;
-  if (!goal) throw new Error("O objetivo não pertence ao espaço atual.");
+  const { plans, contributions } = await loadGoalSettings(groupId, firestore);
+  const goalSnapshot = await getDoc(doc(firestore, "settings", goalId));
+  if (!goalSnapshot.exists()) throw new Error("O objetivo não foi encontrado. Atualize a tela e tente novamente.");
+  const goalRecord = goalSnapshot.data();
+  if (goalRecord.groupId !== groupId || goalRecord.kind !== "financialGoal") {
+    throw new Error("O objetivo não pertence ao espaço atual.");
+  }
+  const goal = { ...goalRecord, id: goalSnapshot.id } as Record<string, unknown> & { id: string };
   const currentKey = getMonthKey(year, month);
   const currentPlan = plans
     .filter((rawPlan) => {
@@ -268,7 +297,8 @@ export async function confirmFinancialGoalContribution(
   if (!currentPlan) throw new Error("O planejamento mensal do objetivo não foi encontrado.");
   const currentData = await getFinancialGoalsData(groupId, year, month, monthId, firestore);
   const goalData = currentData.goals.find((goal) => goal.id === goalId);
-  if (!goalData || goalData.plannedMonthlyCents <= 0) throw new Error("Não há valor planejado para efetivar neste mês.");
+  if (!goalData) throw new Error("O objetivo não está disponível neste mês.");
+  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) throw new Error("Informe um valor maior que zero para efetivar.");
   if (goalData.isConfirmedThisMonth) throw new Error("Este objetivo já foi efetivado neste mês.");
   const duplicate = contributions.some((rawContribution) => {
     const contribution = rawContribution as Record<string, unknown>;
@@ -282,10 +312,62 @@ export async function confirmFinancialGoalContribution(
     kind: "financialGoalContribution",
     goalId,
     effectiveMonth: currentKey,
-    amountCents: goalData.plannedMonthlyCents,
+    amountCents: input.amountCents,
     name: String(currentPlan.name || goal.name),
     createdBy: userId,
     createdAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+export async function updateFinancialGoalContribution(
+  groupId: string,
+  userId: string,
+  year: number,
+  month: number,
+  monthId: string,
+  goalId: string,
+  input: FinancialGoalContributionInput,
+  firestore: Firestore,
+) {
+  await assertMonthExists(groupId, monthId, year, month, firestore);
+  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+    throw new Error("Informe um valor maior que zero para o aporte.");
+  }
+
+  const goalSnapshot = await getDoc(doc(firestore, "settings", goalId));
+  if (!goalSnapshot.exists()) throw new Error("O objetivo não foi encontrado. Atualize a tela e tente novamente.");
+  const goalData = goalSnapshot.data();
+  if (goalData.groupId !== groupId || goalData.kind !== "financialGoal") {
+    throw new Error("O objetivo não pertence ao espaço atual.");
+  }
+
+  const currentKey = getMonthKey(year, month);
+  const { contributions } = await loadGoalSettings(groupId, firestore);
+  const currentContributions = contributions
+    .filter((rawContribution) => {
+      const contribution = rawContribution as Record<string, unknown>;
+      return contribution.goalId === goalId
+        && contribution.effectiveMonth === currentKey
+        && contribution.status !== "reversed";
+    }) as Array<Record<string, unknown> & { id: string }>;
+  if (!currentContributions.length) {
+    throw new Error("Não encontrei o aporte deste mês para editar. Atualize a tela e tente novamente.");
+  }
+
+  const [contributionToUpdate, ...duplicateContributions] = currentContributions;
+  const batch = writeBatch(firestore);
+  batch.update(doc(firestore, "settings", contributionToUpdate.id), {
+    amountCents: input.amountCents,
+    updatedAt: serverTimestamp(),
+    updatedBy: userId,
+  });
+  duplicateContributions.forEach((contribution) => {
+    batch.update(doc(firestore, "settings", contribution.id), {
+      status: "reversed",
+      reversedAt: serverTimestamp(),
+      reversedBy: userId,
+    });
   });
   await batch.commit();
 }
